@@ -1,8 +1,6 @@
-"""
-HAOUD TRADING IA — Agent IA autonome
-Fonctionne via GitHub Actions (cron toutes les 15 min)
-Sources : Binance (crypto) + Yahoo Finance (actions/ETF) + Claude AI
-"""
+# HAOUD TRADING IA - Agent IA autonome
+# GitHub Actions cron toutes les 15 min
+# Sources : CoinGecko (crypto) + Yahoo Finance (actions/ETF) + Claude AI
 
 import requests
 import json
@@ -10,25 +8,36 @@ import os
 import time
 from datetime import datetime
 
-# ─── CONFIGURATION ───────────────────────────────────────────────
+# --- CONFIGURATION ---
 CLAUDE_KEY   = os.environ.get("CLAUDE_API_KEY", "")
 BITPANDA_KEY = os.environ.get("BITPANDA_API_KEY", "")
 
-# Cryptos via Binance (gratuit, illimité)
 CRYPTO_ASSETS = {
-    "BTC":  {"symbol": "BTCUSDT",  "name": "Bitcoin"},
-    "ETH":  {"symbol": "ETHUSDT",  "name": "Ethereum"},
-    "SOL":  {"symbol": "SOLUSDT",  "name": "Solana"},
-    "BNB":  {"symbol": "BNBUSDT",  "name": "BNB"},
-    "XRP":  {"symbol": "XRPUSDT",  "name": "XRP"},
-    "ADA":  {"symbol": "ADAUSDT",  "name": "Cardano"},
-    "AVAX": {"symbol": "AVAXUSDT", "name": "Avalanche"},
-    "LINK": {"symbol": "LINKUSDT", "name": "Chainlink"},
-    "DOT":  {"symbol": "DOTUSDT",  "name": "Polkadot"},
-    "MATIC":{"symbol": "MATICUSDT","name": "Polygon"},
+    "BTC":  {"name": "Bitcoin"},
+    "ETH":  {"name": "Ethereum"},
+    "SOL":  {"name": "Solana"},
+    "BNB":  {"name": "BNB"},
+    "XRP":  {"name": "XRP"},
+    "ADA":  {"name": "Cardano"},
+    "AVAX": {"name": "Avalanche"},
+    "LINK": {"name": "Chainlink"},
+    "DOT":  {"name": "Polkadot"},
+    "MATIC":{"name": "Polygon"},
 }
 
-# Actions via Yahoo Finance (gratuit, sans clé)
+COINGECKO_IDS = {
+    "BTC":  "bitcoin",
+    "ETH":  "ethereum",
+    "SOL":  "solana",
+    "BNB":  "binancecoin",
+    "XRP":  "ripple",
+    "ADA":  "cardano",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "DOT":  "polkadot",
+    "MATIC":"matic-network",
+}
+
 STOCK_ASSETS = {
     "NVDA":  {"ticker": "NVDA",  "name": "NVIDIA"},
     "AAPL":  {"ticker": "AAPL",  "name": "Apple"},
@@ -39,23 +48,19 @@ STOCK_ASSETS = {
     "META":  {"ticker": "META",  "name": "Meta"},
 }
 
-# ETFs via Yahoo Finance (gratuit, sans clé)
 ETF_ASSETS = {
-    # ETFs américains
-    "SPY":   {"ticker": "SPY",     "name": "S&P 500 ETF (US)"},
-    "QQQ":   {"ticker": "QQQ",     "name": "Nasdaq 100 ETF"},
-    "GLD":   {"ticker": "GLD",     "name": "Gold ETF"},
-    "VTI":   {"ticker": "VTI",     "name": "Total Market ETF"},
-    "ARKK":  {"ticker": "ARKK",    "name": "ARK Innovation ETF"},
-    # ETFs Amundi (Euronext Paris)
-    "CW8":   {"ticker": "CW8.PA",  "name": "Amundi MSCI World"},
-    "SP5":   {"ticker": "SP5.PA",  "name": "Amundi S&P 500"},
-    "C40":   {"ticker": "C40.PA",  "name": "Amundi CAC 40"},
-    "PANX":  {"ticker": "PANX.PA", "name": "Amundi Nasdaq-100"},
-    "AEME":  {"ticker": "AEME.PA", "name": "Amundi MSCI Emerging"},
+    "SPY":  {"ticker": "SPY",     "name": "S&P 500 ETF (US)"},
+    "QQQ":  {"ticker": "QQQ",     "name": "Nasdaq 100 ETF"},
+    "GLD":  {"ticker": "GLD",     "name": "Gold ETF"},
+    "VTI":  {"ticker": "VTI",     "name": "Total Market ETF"},
+    "ARKK": {"ticker": "ARKK",    "name": "ARK Innovation ETF"},
+    "CW8":  {"ticker": "CW8.PA",  "name": "Amundi MSCI World"},
+    "SP5":  {"ticker": "SP5.PA",  "name": "Amundi S&P 500"},
+    "C40":  {"ticker": "C40.PA",  "name": "Amundi CAC 40"},
+    "PANX": {"ticker": "PANX.PA", "name": "Amundi Nasdaq-100"},
+    "AEME": {"ticker": "AEME.PA", "name": "Amundi MSCI Emerging"},
 }
 
-# Règles de trading
 MIN_SCORE_BUY   = 70
 MAX_SCORE_SELL  = 40
 STOP_LOSS_PCT   = 0.07
@@ -66,7 +71,7 @@ DRY_RUN         = True
 HISTORY_FILE = "docs/trade_history.json"
 STATE_FILE   = "docs/bot_state.json"
 
-# ─── TAUX EUR/USD ─────────────────────────────────────────────────
+# --- TAUX EUR/USD ---
 def get_eur_rate():
     try:
         r = requests.get(
@@ -81,7 +86,7 @@ def get_eur_rate():
         except:
             return 0.923
 
-# ─── RSI SIMPLIFIÉ ────────────────────────────────────────────────
+# --- RSI ---
 def compute_rsi(closes, period=5):
     if len(closes) < period + 1:
         return 50
@@ -97,39 +102,46 @@ def compute_rsi(closes, period=5):
     rs = avg_gain / avg_loss
     return round(100 - (100 / (1 + rs)), 1)
 
-# ─── PRIX BINANCE (crypto) ────────────────────────────────────────
-def get_binance_prices():
+# --- PRIX COINGECKO (crypto) ---
+def get_crypto_prices():
     prices = {}
-    for key, info in CRYPTO_ASSETS.items():
-        try:
-            r = requests.get(
-                f"https://api.binance.com/api/v3/ticker/24hr?symbol={info['symbol']}",
-                timeout=10
-            )
-            t = r.json()
-            if "lastPrice" in t:
-                prices[key] = {
-                    "price_usd":  float(t["lastPrice"]),
-                    "change_24h": float(t["priceChangePercent"]),
-                    "volume_usd": float(t["quoteVolume"]),
-                    "high_24h":   float(t["highPrice"]),
-                    "low_24h":    float(t["lowPrice"]),
-                    "name":       info["name"],
-                    "type":       "crypto",
-                    "source":     "Binance LIVE"
-                }
-                print(f"  [OK] {key} = {float(t['lastPrice']):.4f} USD ({float(t['priceChangePercent']):+.2f}%)")
-        except Exception as e:
-            print(f"  [ERREUR] {key}: {e}")
-        time.sleep(0.1)
+    try:
+        ids = ",".join(COINGECKO_IDS.values())
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/coins/markets"
+            "?vs_currency=usd&ids=" + ids +
+            "&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=24h",
+            headers={"Accept": "application/json"},
+            timeout=15
+        )
+        data = r.json()
+        id_to_ticker = {v: k for k, v in COINGECKO_IDS.items()}
+        for coin in data:
+            key = id_to_ticker.get(coin["id"])
+            if not key:
+                continue
+            prices[key] = {
+                "price_usd":  float(coin["current_price"]),
+                "change_24h": float(coin.get("price_change_percentage_24h") or 0),
+                "volume_usd": float(coin.get("total_volume") or 0),
+                "high_24h":   float(coin.get("high_24h") or coin["current_price"]),
+                "low_24h":    float(coin.get("low_24h")  or coin["current_price"]),
+                "rsi":        50,
+                "name":       CRYPTO_ASSETS[key]["name"],
+                "type":       "crypto",
+                "source":     "CoinGecko LIVE"
+            }
+            print("  [OK] " + key + " = " + str(float(coin["current_price"])) + " USD")
+    except Exception as e:
+        print("  [ERREUR CoinGecko] " + str(e))
     return prices
 
-# ─── PRIX YAHOO FINANCE (actions + ETFs) ─────────────────────────
+# --- PRIX YAHOO FINANCE ---
 def get_yahoo_price(ticker, name, asset_type):
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         r = requests.get(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=10d",
+            "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker + "?interval=1d&range=10d",
             headers=headers, timeout=10
         )
         data   = r.json()
@@ -138,12 +150,10 @@ def get_yahoo_price(ticker, name, asset_type):
         price  = float(meta.get("regularMarketPrice", 0))
         prev   = float(meta.get("chartPreviousClose", meta.get("previousClose", price)))
         change = ((price - prev) / prev * 100) if prev else 0
-
         closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
         closes = [c for c in closes if c is not None]
         rsi = compute_rsi(closes) if len(closes) >= 3 else 50
-
-        print(f"  [OK] {ticker} = {price:.2f} USD ({change:+.2f}%) RSI={rsi}")
+        print("  [OK] " + ticker + " = " + str(round(price, 2)) + " USD RSI=" + str(rsi))
         return {
             "price_usd":  price,
             "change_24h": round(change, 2),
@@ -156,7 +166,7 @@ def get_yahoo_price(ticker, name, asset_type):
             "source":     "Yahoo Finance LIVE"
         }
     except Exception as e:
-        print(f"  [ERREUR] {ticker}: {e}")
+        print("  [ERREUR] " + ticker + ": " + str(e))
         return None
 
 def get_stock_prices():
@@ -177,38 +187,27 @@ def get_etf_prices():
         time.sleep(0.3)
     return prices
 
-# ─── ANALYSE CLAUDE AI ────────────────────────────────────────────
+# --- ANALYSE CLAUDE AI ---
 def analyze_with_claude(asset, info):
     type_label = {"crypto": "crypto-monnaie", "stock": "action", "etf": "ETF"}.get(info.get("type",""), "actif")
-    rsi_val = info.get("rsi", "N/A")
     try:
-        prompt = f"""Tu es un analyste financier IA expert en trading algorithmique.
-Analyse cette {type_label} : {info['name']} ({asset})
-- Prix : {info['price_usd']:.4f} USD
-- Variation 24h : {info['change_24h']:+.2f}%
-- High 24h : {info.get('high_24h', 0):.4f} | Low 24h : {info.get('low_24h', 0):.4f}
-- Volume 24h : {info.get('volume_usd', 0):,.0f} USD
-- RSI : {rsi_val}
-- Date : {datetime.now().strftime('%d/%m/%Y %H:%M')} UTC
-
-Réponds UNIQUEMENT en JSON valide sans markdown :
-{{
-  "score_technique": <0-100>,
-  "score_sentiment": <0-100>,
-  "score_macro": <0-100>,
-  "score_momentum": <0-100>,
-  "score_volume": <0-100>,
-  "signal": "<BUY|SELL|HOLD>",
-  "confiance": <0-100>,
-  "tendance": "<HAUSSIERE|BAISSIERE|NEUTRE>",
-  "support": <prix support en USD, nombre>,
-  "resistance": <prix résistance en USD, nombre>,
-  "rsi_analyse": "<suracheté|survendu|neutre>",
-  "raison": "<analyse en français, max 3 phrases>",
-  "risque_principal": "<risque en français, 1 phrase>",
-  "opportunite": "<opportunité en français, 1 phrase>"
-}}"""
-
+        prompt = (
+            "Tu es un analyste financier IA expert en trading algorithmique.\n"
+            "Analyse cette " + type_label + " : " + info['name'] + " (" + asset + ")\n"
+            "- Prix : " + str(round(info['price_usd'], 4)) + " USD\n"
+            "- Variation 24h : " + str(info['change_24h']) + "%\n"
+            "- High 24h : " + str(round(info.get('high_24h', 0), 4)) + " | Low 24h : " + str(round(info.get('low_24h', 0), 4)) + "\n"
+            "- Volume 24h : " + str(int(info.get('volume_usd', 0))) + " USD\n"
+            "- RSI : " + str(info.get('rsi', 50)) + "\n"
+            "- Date : " + datetime.now().strftime('%d/%m/%Y %H:%M') + " UTC\n\n"
+            "Reponds UNIQUEMENT en JSON valide sans markdown :\n"
+            '{"score_technique":<0-100>,"score_sentiment":<0-100>,"score_macro":<0-100>,'
+            '"score_momentum":<0-100>,"score_volume":<0-100>,"signal":"<BUY|SELL|HOLD>",'
+            '"confiance":<0-100>,"tendance":"<HAUSSIERE|BAISSIERE|NEUTRE>",'
+            '"support":<nombre>,"resistance":<nombre>,"rsi_analyse":"<surachete|survendu|neutre>",'
+            '"raison":"<analyse FR max 3 phrases>","risque_principal":"<risque FR 1 phrase>",'
+            '"opportunite":"<opportunite FR 1 phrase>"}'
+        )
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -227,7 +226,7 @@ Réponds UNIQUEMENT en JSON valide sans markdown :
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        print(f"  [CLAUDE ERREUR] {asset}: {e}")
+        print("  [CLAUDE ERREUR] " + asset + ": " + str(e))
         return {
             "score_technique": 50, "score_sentiment": 50,
             "score_macro": 50, "score_momentum": 50, "score_volume": 50,
@@ -235,11 +234,11 @@ Réponds UNIQUEMENT en JSON valide sans markdown :
             "tendance": "NEUTRE", "support": 0, "resistance": 0,
             "rsi_analyse": "neutre",
             "raison": "Analyse indisponible.",
-            "risque_principal": "Données insuffisantes.",
-            "opportunite": "Données insuffisantes."
+            "risque_principal": "Donnees insuffisantes.",
+            "opportunite": "Donnees insuffisantes."
         }
 
-# ─── CALCUL SCORE GLOBAL ─────────────────────────────────────────
+# --- SCORE GLOBAL ---
 def compute_global_score(analysis):
     weights = {
         "score_technique": 0.25,
@@ -250,10 +249,10 @@ def compute_global_score(analysis):
     }
     return round(min(100, max(0, sum(analysis.get(k, 50) * w for k, w in weights.items()))))
 
-# ─── EXÉCUTION ORDRE BITPANDA ────────────────────────────────────
+# --- ORDRE BITPANDA ---
 def place_order_bitpanda(asset, side, amount_eur):
     if DRY_RUN:
-        print(f"  [DRY RUN] {side} {asset} pour {amount_eur}€")
+        print("  [DRY RUN] " + side + " " + asset + " pour " + str(amount_eur) + "EUR")
         return {"status": "simulated"}
     try:
         r = requests.get("https://api.exchange.bitpanda.com/public/v1/instruments", timeout=10)
@@ -266,16 +265,16 @@ def place_order_bitpanda(asset, side, amount_eur):
             return None
         r = requests.post(
             "https://api.exchange.bitpanda.com/public/v1/account/orders",
-            headers={"Authorization": f"Bearer {BITPANDA_KEY}", "Content-Type": "application/json"},
+            headers={"Authorization": "Bearer " + BITPANDA_KEY, "Content-Type": "application/json"},
             json={"instrument_code": instrument_id, "type": "MARKET", "side": side, "amount": str(amount_eur)},
             timeout=15
         )
         return r.json()
     except Exception as e:
-        print(f"  [BITPANDA ERREUR] {e}")
+        print("  [BITPANDA ERREUR] " + str(e))
         return None
 
-# ─── CHARGEMENT / SAUVEGARDE ─────────────────────────────────────
+# --- JSON ---
 def load_json(path, default):
     try:
         with open(path, "r") as f:
@@ -288,18 +287,18 @@ def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# ─── BOT PRINCIPAL ───────────────────────────────────────────────
+# --- BOT PRINCIPAL ---
 def run_bot():
-    print(f"\n{'='*55}")
-    print(f"  HAOUD TRADING IA — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} UTC")
-    print(f"{'='*55}\n")
+    print("\n" + "="*55)
+    print("  HAOUD TRADING IA - " + datetime.now().strftime('%d/%m/%Y %H:%M:%S') + " UTC")
+    print("="*55 + "\n")
 
     eur_rate = get_eur_rate()
-    print(f"[FX] 1 USD = {eur_rate:.4f} EUR\n")
+    print("[FX] 1 USD = " + str(round(eur_rate, 4)) + " EUR\n")
 
-    print("[CRYPTO] Binance...")
+    print("[CRYPTO] CoinGecko...")
     all_prices = {}
-    all_prices.update(get_binance_prices())
+    all_prices.update(get_crypto_prices())
 
     print("\n[ACTIONS] Yahoo Finance...")
     all_prices.update(get_stock_prices())
@@ -310,7 +309,7 @@ def run_bot():
     history   = load_json(HISTORY_FILE, [])
     bot_state = load_json(STATE_FILE, {"positions": {}, "last_run": None, "total_pnl_eur": 0})
 
-    print(f"\n[ANALYSE IA] {len(all_prices)} actifs...\n")
+    print("\n[ANALYSE IA] " + str(len(all_prices)) + " actifs...\n")
     results = []
 
     for asset, price_data in all_prices.items():
@@ -320,13 +319,13 @@ def run_bot():
         name      = price_data.get("name", asset)
         atype     = price_data.get("type", "crypto")
 
-        print(f"[{asset}] {name} — {price_eur:.4f}€ ({change:+.2f}%)")
+        print("[" + asset + "] " + name + " - " + str(round(price_eur, 4)) + "EUR (" + str(change) + "%)")
 
         analysis     = analyze_with_claude(asset, price_data)
         global_score = compute_global_score(analysis)
         signal       = analysis.get("signal", "HOLD")
 
-        print(f"  → Score: {global_score} | {signal} | {analysis.get('tendance','?')}")
+        print("  -> Score: " + str(global_score) + " | " + signal + " | " + analysis.get("tendance", "?"))
 
         action_taken = None
         position     = bot_state["positions"].get(asset)
@@ -339,23 +338,23 @@ def run_bot():
                 bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
                 del bot_state["positions"][asset]
                 action_taken = "STOP_LOSS"
-                print(f"  ⚠ STOP-LOSS déclenché ({pnl_pct*100:.1f}%)")
             elif pnl_pct >= TAKE_PROFIT_PCT:
                 place_order_bitpanda(asset, "SELL", position["amount_eur"])
                 bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
                 del bot_state["positions"][asset]
                 action_taken = "TAKE_PROFIT"
-                print(f"  ✓ TAKE-PROFIT déclenché ({pnl_pct*100:.1f}%)")
         elif signal == "BUY" and global_score >= MIN_SCORE_BUY and not position:
             place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
-            bot_state["positions"][asset] = {"entry_price_eur": price_eur, "amount_eur": MAX_TRADE_EUR, "entry_date": datetime.now().isoformat()}
+            bot_state["positions"][asset] = {
+                "entry_price_eur": price_eur,
+                "amount_eur":      MAX_TRADE_EUR,
+                "entry_date":      datetime.now().isoformat()
+            }
             action_taken = "BUY"
-            print(f"  ✓ ACHAT")
         elif signal == "SELL" and global_score <= MAX_SCORE_SELL and position:
             place_order_bitpanda(asset, "SELL", position["amount_eur"])
             del bot_state["positions"][asset]
             action_taken = "SELL"
-            print(f"  ✓ VENTE")
 
         entry = {
             "timestamp":       datetime.now().isoformat(),
@@ -414,9 +413,9 @@ def run_bot():
     save_json(STATE_FILE, bot_state)
 
     actions = [e for e in results if e["action"] != "HOLD"]
-    print(f"\n{'='*55}")
-    print(f"  DONE — {len(results)} actifs | {len(actions)} ordres | PnL: {bot_state['total_pnl_eur']:.2f}€")
-    print(f"{'='*55}\n")
+    print("\n" + "="*55)
+    print("  DONE - " + str(len(results)) + " actifs | " + str(len(actions)) + " ordres | PnL: " + str(bot_state['total_pnl_eur']) + "EUR")
+    print("="*55 + "\n")
 
 if __name__ == "__main__":
     run_bot()
