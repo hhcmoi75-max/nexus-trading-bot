@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2026-03-13T19:36:05.813365",
+    "asset": "NVDA",
+    "name": "NVIDIA",
+    "price_eur": 159.0,
+    "change_24h": -1.55,
+    "score": 59,
+    "signal": "HOLD",
+    "confiance": 73,
+    "action": "HOLD",
+    "raison": "NVIDIA maintient une position solide malgré la correction de -1.55%, avec des fondamentaux IA robustes et un environnement macro favorable. La volatilité récente suggère d'attendre une consolidation avant d'initier de nouvelles positions.",
+    "risque": "Risque de correction plus profonde si les prises de bénéfices s'intensifient sur les valeurs tech.",
+    "dry_run": true
+  }
+]
