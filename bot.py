@@ -24,6 +24,8 @@ CRYPTO_ASSETS = {
     "ADA":  {"symbol": "ADAUSDT",  "name": "Cardano"},
     "AVAX": {"symbol": "AVAXUSDT", "name": "Avalanche"},
     "LINK": {"symbol": "LINKUSDT", "name": "Chainlink"},
+    "DOT":  {"symbol": "DOTUSDT",  "name": "Polkadot"},
+    "MATIC":{"symbol": "MATICUSDT","name": "Polygon"},
 }
 
 # Actions via Yahoo Finance (gratuit, sans clé)
@@ -39,11 +41,18 @@ STOCK_ASSETS = {
 
 # ETFs via Yahoo Finance (gratuit, sans clé)
 ETF_ASSETS = {
-    "SPY":  {"ticker": "SPY",  "name": "S&P 500 ETF"},
-    "QQQ":  {"ticker": "QQQ",  "name": "Nasdaq 100 ETF"},
-    "GLD":  {"ticker": "GLD",  "name": "Gold ETF"},
-    "VTI":  {"ticker": "VTI",  "name": "Total Market ETF"},
-    "ARKK": {"ticker": "ARKK", "name": "ARK Innovation ETF"},
+    # ETFs américains
+    "SPY":   {"ticker": "SPY",     "name": "S&P 500 ETF (US)"},
+    "QQQ":   {"ticker": "QQQ",     "name": "Nasdaq 100 ETF"},
+    "GLD":   {"ticker": "GLD",     "name": "Gold ETF"},
+    "VTI":   {"ticker": "VTI",     "name": "Total Market ETF"},
+    "ARKK":  {"ticker": "ARKK",    "name": "ARK Innovation ETF"},
+    # ETFs Amundi (Euronext Paris)
+    "CW8":   {"ticker": "CW8.PA",  "name": "Amundi MSCI World"},
+    "SP5":   {"ticker": "SP5.PA",  "name": "Amundi S&P 500"},
+    "C40":   {"ticker": "C40.PA",  "name": "Amundi CAC 40"},
+    "PANX":  {"ticker": "PANX.PA", "name": "Amundi Nasdaq-100"},
+    "AEME":  {"ticker": "AEME.PA", "name": "Amundi MSCI Emerging"},
 }
 
 # Règles de trading
