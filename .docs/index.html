@@ -288,8 +288,12 @@ function switchTab(page, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('page-' + page).classList.add('active');
-  if (page === 'history') renderHistory();
+  if (page === 'history')   renderHistory();
   if (page === 'positions') renderPositions();
+  if (page === 'crypto')    renderCryptoCards();
+  if (page === 'stocks')    renderStockCards();
+  if (page === 'etfs')      renderEtfCards();
+  if (page === 'dashboard') renderAllCards();
 }
 
 // ─── CHARGEMENT ───────────────────────────────────────────────────
@@ -536,6 +540,26 @@ function renderAllCards() {
   document.getElementById('kpiAssets').textContent = all.length;
 }
 
+// Fonctions dédiées par onglet — toujours afficher tous les actifs connus
+function renderCryptoCards() {
+  const el = document.getElementById('cryptoCards');
+  if (!el) return;
+  const html = [...KNOWN_CRYPTO].map(assetCardHTML).join('');
+  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
+}
+function renderStockCards() {
+  const el = document.getElementById('stockCards');
+  if (!el) return;
+  const html = [...KNOWN_STOCK].map(assetCardHTML).join('');
+  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
+}
+function renderEtfCards() {
+  const el = document.getElementById('etfCards');
+  if (!el) return;
+  const html = [...KNOWN_ETF].map(assetCardHTML).join('');
+  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
+}
+
 // ─── RENDER HISTORY ───────────────────────────────────────────────
 function renderHistory() {
   const fType   = document.getElementById('filterType')?.value || '';
@@ -650,6 +674,9 @@ function render() {
   }
 
   renderAllCards();
+  renderCryptoCards();
+  renderStockCards();
+  renderEtfCards();
 
   if (selectedAsset) selectAsset(selectedAsset);
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
