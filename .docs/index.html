@@ -461,8 +461,8 @@ function selectAsset(k) {
 
 // Listes de secours pour typage des actifs
 const KNOWN_CRYPTO = new Set(["BTC","ETH","SOL","BNB","XRP","ADA","AVAX","LINK","DOT","MATIC"]);
-const KNOWN_STOCK  = new Set(["NVDA","AAPL","MSFT","GOOGL","TSLA","AMZN","META","NFLX","AMD","INTC"]);
-const KNOWN_ETF = new Set(["SPY","QQQ","GLD","VTI","ARKK","IWM","DIA","XLK","TLT","CW8","SP5","C40","PANX","AEME"]);
+const KNOWN_STOCK  = new Set(["NVDA","AAPL","MSFT","GOOGL","TSLA","AMZN","META"]);
+const KNOWN_ETF    = new Set(["SPY","QQQ","GLD","VTI","ARKK","CW8","SP5","C40","PANX","AEME"]);
 
 function getType(k) {
   const p = state?.last_prices || {};
@@ -482,14 +482,22 @@ function renderAllCards() {
   const prices = state.last_prices || {};
   const lastByAsset = {};
   history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
-  const all    = [...new Set([...Object.keys(prices), ...Object.keys(lastByAsset)])];
+
+  // Toujours afficher TOUS les actifs connus, même sans données encore
+  const allKnown = [
+    ...KNOWN_CRYPTO, ...KNOWN_STOCK, ...KNOWN_ETF
+  ];
+  const fromData = [...new Set([...Object.keys(prices), ...Object.keys(lastByAsset)])];
+  const all = [...new Set([...allKnown, ...fromData])];
+
   const cryptos = all.filter(k => getType(k) === 'crypto');
   const stocks  = all.filter(k => getType(k) === 'stock');
   const etfs    = all.filter(k => getType(k) === 'etf');
 
   const renderSet = (ids, container) => {
     const el = document.getElementById(container);
-    if (el) el.innerHTML = ids.map(assetCardHTML).join('');
+    if (el) el.innerHTML = ids.map(assetCardHTML).filter(Boolean).join('') ||
+      '<div class="empty">En attente du prochain cycle du bot...</div>';
   };
 
   renderSet(all,    'allAssets');
