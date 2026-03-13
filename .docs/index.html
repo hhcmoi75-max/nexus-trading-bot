@@ -1,691 +1,444 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HAOUD TRADING IA</title>
-<style>
-:root {
-  --bg:#0b0d12; --bg2:#13151d; --bg3:#1a1d27; --bg4:#21253200;
-  --border:#252836; --border2:#2e3245;
-  --text:#e8eaf0; --muted:#7880a0; --muted2:#505878;
-  --green:#3ddc84; --red:#ff5c6a; --amber:#ffb547; --blue:#5b9cf6;
-  --purple:#8b7ff7; --cyan:#36d9c8; --orange:#ff8c42;
-  --green-bg:rgba(61,220,132,.1); --red-bg:rgba(255,92,106,.1);
-  --amber-bg:rgba(255,181,71,.1); --blue-bg:rgba(91,156,246,.1);
-  --purple-bg:rgba(139,127,247,.1); --cyan-bg:rgba(54,217,200,.1);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px;min-height:100vh}
+"""
+HAOUD TRADING IA — Agent IA autonome
+Fonctionne via GitHub Actions (cron toutes les 15 min)
+Sources : Binance (crypto) + Yahoo Finance (actions/ETF) + Claude AI
+"""
 
-/* TOPBAR */
-.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100;backdrop-filter:blur(10px)}
-.logo{display:flex;align-items:center;gap:10px}
-.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--purple),var(--cyan));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
-.logo-text{font-size:14px;font-weight:bold;letter-spacing:.15em;color:var(--text)}
-.logo-text span{color:var(--purple)}
-.logo-sub{font-size:9px;color:var(--muted);letter-spacing:.08em;margin-top:1px}
-.topright{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.pill{display:flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
-.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.dot.green{background:var(--green);animation:blink 2s infinite}
-.dot.amber{background:var(--amber);animation:blink 1s infinite}
-.dot.red{background:var(--red)}
-@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
-.btn{background:var(--bg3);border:1px solid var(--border2);color:var(--muted);padding:4px 12px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:10px;letter-spacing:.05em;transition:all .2s}
-.btn:hover{background:var(--purple-bg);border-color:var(--purple);color:var(--purple)}
+import requests
+import json
+import os
+import time
+from datetime import datetime
 
-/* TABS */
-.tabs{display:flex;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px}
-.tab{padding:10px 18px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.06em;transition:all .2s}
-.tab.active{color:var(--purple);border-bottom-color:var(--purple)}
-.tab:hover:not(.active){color:var(--text)}
+# ─── CONFIGURATION ───────────────────────────────────────────────
+CLAUDE_KEY   = os.environ.get("CLAUDE_API_KEY", "")
+BITPANDA_KEY = os.environ.get("BITPANDA_API_KEY", "")
 
-/* MAIN */
-.main{padding:16px 20px;max-width:1400px;margin:0 auto}
-.page{display:none}.page.active{display:block}
-.sec-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin:20px 0 10px;display:flex;align-items:center;gap:8px}
-.sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
-
-/* GRIDS */
-.grid-kpi{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
-.grid-cat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-@media(max-width:1100px){.grid-kpi{grid-template-columns:repeat(3,1fr)}.grid-cat{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:700px){.grid-kpi,.grid-cat{grid-template-columns:repeat(2,1fr)}}
-
-/* CARDS */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
-.kpi-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px}
-.kpi-val{font-size:18px;font-weight:bold}
-.kpi-sub{font-size:10px;color:var(--muted);margin-top:3px}
-
-/* ASSET CARDS */
-.asset-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
-.asset-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .2s}
-.asset-card:hover,.asset-card.active{border-color:var(--purple)}
-.asset-card.active::before{background:linear-gradient(90deg,var(--purple),var(--cyan))}
-.asset-card.type-crypto::before{background:transparent}
-.asset-card.active.type-crypto::before{background:linear-gradient(90deg,var(--amber),var(--orange))}
-.asset-card.active.type-stock::before{background:linear-gradient(90deg,var(--blue),var(--cyan))}
-.asset-card.active.type-etf::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
-.ac-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.ac-left .ac-ticker{font-weight:bold;font-size:13px;display:flex;align-items:center;gap:5px}
-.ac-left .ac-name{font-size:9px;color:var(--muted);margin-top:2px}
-.ac-right{text-align:right}
-.ac-price{font-size:13px;font-weight:bold}
-.ac-chg{font-size:10px;margin-top:1px}
-.ac-mid{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.ac-hl{font-size:9px;color:var(--muted)}
-.signal-badge{font-size:9px;padding:2px 7px;border-radius:3px;font-weight:bold;letter-spacing:.05em}
-.sig-buy{background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.25)}
-.sig-sell{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,92,106,.25)}
-.sig-hold{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(255,181,71,.25)}
-.score-bar{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
-.score-fill{height:100%;border-radius:2px;transition:width .8s}
-.ac-footer{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
-.ac-score{font-size:10px}
-.ac-rsi{font-size:9px;color:var(--muted)}
-.pos-dot{width:5px;height:5px;border-radius:50%;background:var(--purple);display:inline-block;margin-left:4px;animation:blink 1.5s infinite}
-.type-badge{font-size:8px;padding:1px 5px;border-radius:3px;letter-spacing:.04em}
-.tb-crypto{background:var(--amber-bg);color:var(--amber)}
-.tb-stock{background:var(--blue-bg);color:var(--blue)}
-.tb-etf{background:var(--green-bg);color:var(--green)}
-
-/* DETAIL PANEL */
-.detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
-.dp-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px}
-.dp-title{font-size:16px;font-weight:bold}
-.dp-subtitle{font-size:10px;color:var(--muted);margin-top:3px}
-.dp-signal{text-align:right}
-.dp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
-.dp-grid-wide{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
-@media(max-width:800px){.dp-grid,.dp-grid-wide{grid-template-columns:repeat(2,1fr)}}
-.dp-item{background:var(--bg3);border-radius:8px;padding:10px 12px;border:1px solid var(--border)}
-.dp-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
-.dp-val{font-size:14px;font-weight:bold}
-.dp-val.sm{font-size:12px}
-.scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
-@media(max-width:700px){.scores-grid{grid-template-columns:repeat(3,1fr)}}
-.score-item{background:var(--bg3);border-radius:8px;padding:8px 10px;border:1px solid var(--border);text-align:center}
-.score-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-.score-val{font-size:18px;font-weight:bold}
-.score-mini-bar{height:3px;background:var(--border);border-radius:2px;margin-top:5px;overflow:hidden}
-.score-mini-fill{height:100%;border-radius:2px}
-
-/* ANALYSIS BOXES */
-.analysis-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
-@media(max-width:700px){.analysis-row{grid-template-columns:1fr}}
-.analysis-box{background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--muted);line-height:1.65;border-left:3px solid var(--purple)}
-.analysis-box.risk{border-left-color:var(--red)}
-.analysis-box.opp{border-left-color:var(--green)}
-.abox-title{font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;color:var(--text)}
-
-/* TENDANCE */
-.tend-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:20px;font-weight:bold}
-.tend-up{background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.2)}
-.tend-down{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,92,106,.2)}
-.tend-neu{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(255,181,71,.2)}
-
-/* TABLE */
-.table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:11px}
-th{text-align:left;padding:8px 10px;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}
-td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:var(--bg3)}
-.action-badge{display:inline-block;font-size:9px;padding:2px 7px;border-radius:3px;font-weight:bold;letter-spacing:.04em}
-.ab-buy{background:var(--green-bg);color:var(--green)}
-.ab-sell{background:var(--red-bg);color:var(--red)}
-.ab-hold{background:var(--bg3);color:var(--muted)}
-.ab-stop{background:rgba(255,92,106,.2);color:var(--red)}
-.ab-tp{background:rgba(61,220,132,.2);color:var(--green)}
-
-/* POSITIONS */
-.pos-table th,.pos-table td{padding:10px 12px}
-.pnl-chip{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px}
-
-/* COLORS */
-.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}.cyan{color:var(--cyan)}.muted{color:var(--muted)}
-
-.empty{color:var(--muted);text-align:center;padding:30px;font-size:11px}
-.mode-warning{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid var(--amber);color:var(--amber);background:var(--amber-bg)}
-.source-tag{font-size:8px;color:var(--muted2);padding:1px 5px;border-radius:3px;border:1px solid var(--border)}
-</style>
-</head>
-<body>
-
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="logo">
-    <div class="logo-icon">⚡</div>
-    <div>
-      <div class="logo-text">HAOUD <span>TRADING IA</span></div>
-      <div class="logo-sub">AGENT AUTONOME · ANALYSE IA · MULTI-ACTIFS</div>
-    </div>
-  </div>
-  <div class="topright">
-    <div class="pill"><div class="dot amber" id="statusDot"></div><span id="statusText">Chargement...</span></div>
-    <div class="pill" id="fxPill">EUR/USD</div>
-    <div class="pill" id="modePill">Mode...</div>
-    <div class="pill" id="lastRunPill">Dernier run...</div>
-    <button class="btn" onclick="loadData()">↻ Actualiser</button>
-  </div>
-</div>
-
-<!-- TABS -->
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('dashboard',this)">📊 Dashboard</div>
-  <div class="tab" onclick="switchTab('crypto',this)">₿ Cryptos</div>
-  <div class="tab" onclick="switchTab('stocks',this)">📈 Actions</div>
-  <div class="tab" onclick="switchTab('etfs',this)">🏦 ETFs</div>
-  <div class="tab" onclick="switchTab('history',this)">📋 Historique</div>
-  <div class="tab" onclick="switchTab('positions',this)">💼 Positions</div>
-</div>
-
-<div class="main">
-
-<!-- PAGE DASHBOARD -->
-<div id="page-dashboard" class="page active">
-  <div class="sec-title">Résumé portefeuille</div>
-  <div class="grid-kpi" id="kpiGrid">
-    <div class="card"><div class="kpi-label">PnL Total</div><div class="kpi-val" id="kpiPnl">—</div><div class="kpi-sub">depuis démarrage</div></div>
-    <div class="card"><div class="kpi-label">Positions</div><div class="kpi-val purple" id="kpiPos">—</div><div class="kpi-sub">ouvertes</div></div>
-    <div class="card"><div class="kpi-label">Ordres</div><div class="kpi-val" id="kpiOrders">—</div><div class="kpi-sub">exécutés</div></div>
-    <div class="card"><div class="kpi-label">Actifs suivis</div><div class="kpi-val cyan" id="kpiAssets">—</div><div class="kpi-sub">crypto + actions + ETF</div></div>
-    <div class="card"><div class="kpi-label">Taux EUR/USD</div><div class="kpi-val blue" id="kpiRate">—</div></div>
-    <div class="card"><div class="kpi-label">Signaux ACHAT</div><div class="kpi-val green" id="kpiBuy">—</div><div class="kpi-sub">actuellement</div></div>
-  </div>
-
-  <div id="detailSection" style="display:none">
-    <div class="sec-title" id="detailTitle">Détail actif</div>
-    <div id="detailContent"></div>
-  </div>
-
-  <div class="sec-title">Vue globale</div>
-  <div class="grid-cat" id="allAssets"></div>
-</div>
-
-<!-- PAGE CRYPTO -->
-<div id="page-crypto" class="page">
-  <div class="sec-title">Crypto-monnaies — Binance LIVE</div>
-  <div class="grid-cat" id="cryptoCards"></div>
-</div>
-
-<!-- PAGE STOCKS -->
-<div id="page-stocks" class="page">
-  <div class="sec-title">Actions — Yahoo Finance LIVE</div>
-  <div class="grid-cat" id="stockCards"></div>
-</div>
-
-<!-- PAGE ETFs -->
-<div id="page-etfs" class="page">
-  <div class="sec-title">ETFs — Yahoo Finance LIVE</div>
-  <div class="grid-cat" id="etfCards"></div>
-</div>
-
-<!-- PAGE HISTORIQUE -->
-<div id="page-history" class="page">
-  <div class="sec-title">Historique complet</div>
-  <div class="card">
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <select id="filterType" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
-        <option value="">Tous les types</option>
-        <option value="crypto">Crypto</option>
-        <option value="stock">Actions</option>
-        <option value="etf">ETFs</option>
-      </select>
-      <select id="filterAction" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
-        <option value="">Toutes actions</option>
-        <option value="BUY">Achats</option>
-        <option value="SELL">Ventes</option>
-        <option value="HOLD">Attente</option>
-      </select>
-      <select id="filterAsset" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
-        <option value="">Tous les actifs</option>
-      </select>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Date</th><th>Actif</th><th>Type</th><th>Prix €</th><th>Var 24h</th>
-          <th>RSI</th><th>Score</th><th>Signal</th><th>Action</th><th>Tendance</th><th>Analyse IA</th>
-        </tr></thead>
-        <tbody id="historyBody"><tr><td colspan="11" class="empty">Chargement...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- PAGE POSITIONS -->
-<div id="page-positions" class="page">
-  <div class="sec-title">Positions ouvertes</div>
-  <div class="card" id="posCard"><div class="empty">Aucune position ouverte</div></div>
-
-  <div class="sec-title" style="margin-top:20px">Résumé PnL</div>
-  <div class="grid-kpi" id="pnlGrid">
-    <div class="card"><div class="kpi-label">PnL Total</div><div class="kpi-val" id="pnlTotal">—</div></div>
-    <div class="card"><div class="kpi-label">Trades gagnants</div><div class="kpi-val green" id="pnlWins">—</div></div>
-    <div class="card"><div class="kpi-label">Trades perdants</div><div class="kpi-val red" id="pnlLoss">—</div></div>
-    <div class="card"><div class="kpi-label">Stop-loss déclenchés</div><div class="kpi-val amber" id="pnlStop">—</div></div>
-    <div class="card"><div class="kpi-label">Take-profit déclenchés</div><div class="kpi-val cyan" id="pnlTp">—</div></div>
-    <div class="card"><div class="kpi-label">Montant investi</div><div class="kpi-val blue" id="pnlInvested">—</div></div>
-  </div>
-</div>
-
-</div><!-- /main -->
-
-<script>
-// ─── CONFIG ── REMPLACE hhcmoi75-max PAR TON PSEUDO GITHUB ──────────
-const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
-const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
-const REFRESH_MS  = 60000;
-
-let state = null, history = [], selectedAsset = null;
-
-// ─── NAVIGATION ───────────────────────────────────────────────────
-function switchTab(page, el) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('page-' + page).classList.add('active');
-  if (page === 'history')   renderHistory();
-  if (page === 'positions') renderPositions();
-  if (page === 'crypto')    renderCryptoCards();
-  if (page === 'stocks')    renderStockCards();
-  if (page === 'etfs')      renderEtfCards();
-  if (page === 'dashboard') renderAllCards();
+# Cryptos via Binance (gratuit, illimité)
+CRYPTO_ASSETS = {
+    "BTC":  {"symbol": "BTCUSDT",  "name": "Bitcoin"},
+    "ETH":  {"symbol": "ETHUSDT",  "name": "Ethereum"},
+    "SOL":  {"symbol": "SOLUSDT",  "name": "Solana"},
+    "BNB":  {"symbol": "BNBUSDT",  "name": "BNB"},
+    "XRP":  {"symbol": "XRPUSDT",  "name": "XRP"},
+    "ADA":  {"symbol": "ADAUSDT",  "name": "Cardano"},
+    "AVAX": {"symbol": "AVAXUSDT", "name": "Avalanche"},
+    "LINK": {"symbol": "LINKUSDT", "name": "Chainlink"},
+    "DOT":  {"symbol": "DOTUSDT",  "name": "Polkadot"},
+    "MATIC":{"symbol": "MATICUSDT","name": "Polygon"},
 }
 
-// ─── CHARGEMENT ───────────────────────────────────────────────────
-async function loadData() {
-  document.getElementById('statusDot').className = 'dot amber';
-  document.getElementById('statusText').textContent = 'Mise à jour...';
-  try {
-    const [sR, hR] = await Promise.all([
-      fetch(STATE_URL + '?t=' + Date.now()),
-      fetch(HISTORY_URL + '?t=' + Date.now())
-    ]);
-    state   = await sR.json();
-    history = await hR.json();
-    render();
-    document.getElementById('statusDot').className = 'dot green';
-    document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-  } catch(e) {
-    document.getElementById('statusDot').className = 'dot red';
-    document.getElementById('statusText').textContent = 'Erreur de chargement';
-  }
+# Actions via Yahoo Finance (gratuit, sans clé)
+STOCK_ASSETS = {
+    "NVDA":  {"ticker": "NVDA",  "name": "NVIDIA"},
+    "AAPL":  {"ticker": "AAPL",  "name": "Apple"},
+    "MSFT":  {"ticker": "MSFT",  "name": "Microsoft"},
+    "GOOGL": {"ticker": "GOOGL", "name": "Alphabet"},
+    "TSLA":  {"ticker": "TSLA",  "name": "Tesla"},
+    "AMZN":  {"ticker": "AMZN",  "name": "Amazon"},
+    "META":  {"ticker": "META",  "name": "Meta"},
 }
 
-// ─── HELPERS ──────────────────────────────────────────────────────
-const fmt = (v, d=2) => v == null ? '—' : new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', minimumFractionDigits:d, maximumFractionDigits:d}).format(v);
-const fmtN = (v, d=2) => v == null ? '—' : new Intl.NumberFormat('fr-FR', {minimumFractionDigits:d, maximumFractionDigits:d}).format(v);
-const scoreColor = v => v >= 70 ? 'var(--green)' : v >= 50 ? 'var(--amber)' : 'var(--red)';
-const rsiColor = v => v > 70 ? 'var(--red)' : v < 30 ? 'var(--green)' : 'var(--amber)';
-const sigClass = s => s==='BUY'?'sig-buy':s==='SELL'?'sig-sell':'sig-hold';
-const sigLabel = s => s==='BUY'?'ACHAT':s==='SELL'?'VENTE':'ATTENTE';
-const tendBadge = t => t==='HAUSSIERE'?`<span class="tend-badge tend-up">↑ HAUSSIÈRE</span>`:t==='BAISSIERE'?`<span class="tend-badge tend-down">↓ BAISSIÈRE</span>`:`<span class="tend-badge tend-neu">→ NEUTRE</span>`;
-const typeBadge = t => t==='crypto'?`<span class="type-badge tb-crypto">CRYPTO</span>`:t==='stock'?`<span class="type-badge tb-stock">ACTION</span>`:`<span class="type-badge tb-etf">ETF</span>`;
-const actBadge = a => {
-  const m = {BUY:['ab-buy','ACHAT'],SELL:['ab-sell','VENTE'],HOLD:['ab-hold','ATTENTE'],STOP_LOSS:['ab-stop','STOP-LOSS'],TAKE_PROFIT:['ab-tp','TAKE-PROFIT']};
-  const [cls, lbl] = m[a] || ['ab-hold', a];
-  return `<span class="action-badge ${cls}">${lbl}</span>`;
-};
-
-// ─── ASSET CARD HTML ──────────────────────────────────────────────
-function assetCardHTML(k) {
-  const p = state?.last_prices?.[k];
-  const l = history.slice().reverse().find(h => h.asset === k);
-  // Carte placeholder si aucune donnée encore disponible
-  if (!p && !l) {
-    const atype = getType(k);
-    const names = {
-      BTC:"Bitcoin",ETH:"Ethereum",SOL:"Solana",BNB:"BNB",XRP:"XRP",
-      ADA:"Cardano",AVAX:"Avalanche",LINK:"Chainlink",DOT:"Polkadot",MATIC:"Polygon",
-      NVDA:"NVIDIA",AAPL:"Apple",MSFT:"Microsoft",GOOGL:"Alphabet",TSLA:"Tesla",AMZN:"Amazon",META:"Meta",
-      SPY:"S&P 500 ETF",QQQ:"Nasdaq 100 ETF",GLD:"Gold ETF",VTI:"Total Market ETF",ARKK:"ARK Innovation",
-      CW8:"Amundi MSCI World",SP5:"Amundi S&P 500",C40:"Amundi CAC 40",PANX:"Amundi Nasdaq-100",AEME:"Amundi MSCI Emerging"
-    };
-    return `<div class="asset-card type-${atype}" style="opacity:0.45">
-      <div class="ac-top">
-        <div class="ac-left">
-          <div class="ac-ticker">${k} ${typeBadge(atype)}</div>
-          <div class="ac-name">${names[k]||k}</div>
-        </div>
-        <div class="ac-right">
-          <div class="ac-price muted">—</div>
-          <div class="ac-chg muted">—</div>
-        </div>
-      </div>
-      <div class="ac-mid"><div class="ac-hl muted">En attente du bot...</div></div>
-      <div class="score-bar"><div class="score-fill" style="width:50%;background:var(--border)"></div></div>
-      <div class="ac-footer"><span class="ac-score muted">—/100</span><span class="ac-rsi muted">RSI —</span></div>
-    </div>`;
-  }
-
-  const price   = p?.price_eur;
-  const chg     = p?.change_24h ?? l?.change_24h ?? 0;
-  const high    = p?.high_24h;
-  const low     = p?.low_24h;
-  const rsi     = p?.rsi ?? l?.rsi ?? '—';
-  const score   = l?.score ?? 50;
-  const sig     = l?.signal ?? 'HOLD';
-  const name    = p?.name ?? l?.name ?? k;
-  const atype   = p?.type ?? l?.type ?? 'crypto';
-  const hasPos  = state?.positions?.[k];
-
-  const priceStr = price != null
-    ? (price < 1 ? fmt(price, 6) : price < 100 ? fmt(price, 4) : fmt(price, 2))
-    : '—';
-
-  const hlStr = (high && low)
-    ? `H: ${high < 100 ? fmtN(high,2) : fmtN(high,0)}€ L: ${low < 100 ? fmtN(low,2) : fmtN(low,0)}€`
-    : '';
-
-  return `<div class="asset-card type-${atype} ${selectedAsset===k?'active':''}" onclick="selectAsset('${k}')">
-    <div class="ac-top">
-      <div class="ac-left">
-        <div class="ac-ticker">${k}${hasPos?'<span class="pos-dot"></span>':''} ${typeBadge(atype)}</div>
-        <div class="ac-name">${name}</div>
-      </div>
-      <div class="ac-right">
-        <div class="ac-price">${priceStr}</div>
-        <div class="ac-chg ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div>
-      </div>
-    </div>
-    <div class="ac-mid">
-      <div class="ac-hl">${hlStr}</div>
-      <span class="signal-badge ${sigClass(sig)}">${sigLabel(sig)}</span>
-    </div>
-    <div class="score-bar"><div class="score-fill" style="width:${score}%;background:${scoreColor(score)}"></div></div>
-    <div class="ac-footer">
-      <span class="ac-score" style="color:${scoreColor(score)}">${score}/100</span>
-      <span class="ac-rsi">RSI ${typeof rsi === 'number' ? `<span style="color:${rsiColor(rsi)}">${rsi}</span>` : rsi}</span>
-    </div>
-  </div>`;
+# ETFs via Yahoo Finance (gratuit, sans clé)
+ETF_ASSETS = {
+    # ETFs américains
+    "SPY":   {"ticker": "SPY",     "name": "S&P 500 ETF (US)"},
+    "QQQ":   {"ticker": "QQQ",     "name": "Nasdaq 100 ETF"},
+    "GLD":   {"ticker": "GLD",     "name": "Gold ETF"},
+    "VTI":   {"ticker": "VTI",     "name": "Total Market ETF"},
+    "ARKK":  {"ticker": "ARKK",    "name": "ARK Innovation ETF"},
+    # ETFs Amundi (Euronext Paris)
+    "CW8":   {"ticker": "CW8.PA",  "name": "Amundi MSCI World"},
+    "SP5":   {"ticker": "SP5.PA",  "name": "Amundi S&P 500"},
+    "C40":   {"ticker": "C40.PA",  "name": "Amundi CAC 40"},
+    "PANX":  {"ticker": "PANX.PA", "name": "Amundi Nasdaq-100"},
+    "AEME":  {"ticker": "AEME.PA", "name": "Amundi MSCI Emerging"},
 }
 
-// ─── DETAIL PANEL ─────────────────────────────────────────────────
-function selectAsset(k) {
-  selectedAsset = k;
-  // Re-render all cards to update active state
-  renderAllCards();
+# Règles de trading
+MIN_SCORE_BUY   = 70
+MAX_SCORE_SELL  = 40
+STOP_LOSS_PCT   = 0.07
+TAKE_PROFIT_PCT = 0.18
+MAX_TRADE_EUR   = 50
+DRY_RUN         = True
 
-  const l   = history.slice().reverse().find(h => h.asset === k);
-  const p   = state?.last_prices?.[k];
-  const pos = state?.positions?.[k];
-  if (!l && !p) { document.getElementById('detailSection').style.display = 'none'; return; }
+HISTORY_FILE = "docs/trade_history.json"
+STATE_FILE   = "docs/bot_state.json"
 
-  document.getElementById('detailSection').style.display = 'block';
-  const name  = p?.name ?? l?.name ?? k;
-  const atype = p?.type ?? l?.type ?? 'crypto';
-  const priceEur = p?.price_eur ?? l?.price_eur ?? 0;
-  const chg   = p?.change_24h ?? l?.change_24h ?? 0;
-  const high  = p?.high_24h ?? l?.high_24h ?? 0;
-  const low   = p?.low_24h  ?? l?.low_24h  ?? 0;
-  const vol   = p?.volume_usd ?? l?.volume_usd ?? 0;
-  const rsi   = p?.rsi ?? l?.rsi ?? '—';
-  const score = l?.score ?? 50;
-  const source = p?.source ?? l?.source ?? '';
-  const sl    = priceEur * 0.93;
-  const tp    = priceEur * 1.18;
+# ─── TAUX EUR/USD ─────────────────────────────────────────────────
+def get_eur_rate():
+    try:
+        r = requests.get(
+            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+            timeout=5
+        )
+        return r.json()["usd"]["eur"]
+    except:
+        try:
+            r = requests.get("https://api.frankfurter.app/latest?from=USD&to=EUR", timeout=5)
+            return r.json()["rates"]["EUR"]
+        except:
+            return 0.923
 
-  document.getElementById('detailTitle').textContent = `${name} (${k}) — Analyse détaillée`;
-  document.getElementById('detailContent').innerHTML = `
-    <div class="detail-panel">
-      <div class="dp-header">
-        <div>
-          <div class="dp-title">${name} <span class="muted">${k}</span> ${typeBadge(atype)}</div>
-          <div class="dp-subtitle" style="margin-top:5px">${tendBadge(l?.tendance||'NEUTRE')} &nbsp; <span class="source-tag">${source}</span></div>
-        </div>
-        <div class="dp-signal">
-          <div style="font-size:20px;font-weight:bold;color:${scoreColor(score)}">${score}<span style="font-size:12px;color:var(--muted)">/100</span></div>
-          <div style="margin-top:4px"><span class="signal-badge ${sigClass(l?.signal||'HOLD')}" style="font-size:11px;padding:3px 12px">${sigLabel(l?.signal||'HOLD')}</span></div>
-          <div style="font-size:10px;color:var(--muted);margin-top:4px">Confiance ${l?.confiance||50}%</div>
-        </div>
-      </div>
+# ─── RSI SIMPLIFIÉ ────────────────────────────────────────────────
+def compute_rsi(closes, period=5):
+    if len(closes) < period + 1:
+        return 50
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        delta = closes[i] - closes[i-1]
+        gains.append(max(delta, 0))
+        losses.append(max(-delta, 0))
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 1)
 
-      <div class="dp-grid-wide">
-        <div class="dp-item"><div class="dp-label">Prix actuel</div><div class="dp-val ${priceEur>0?'':'muted'}">${priceEur < 100 ? fmt(priceEur,4) : fmt(priceEur,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Variation 24h</div><div class="dp-val ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
-        <div class="dp-item"><div class="dp-label">High 24h</div><div class="dp-val sm">${high < 100 ? fmt(high,4) : fmt(high,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Low 24h</div><div class="dp-val sm">${low < 100 ? fmt(low,4) : fmt(low,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Volume 24h</div><div class="dp-val sm">${vol > 1e9 ? (vol/1e9).toFixed(1)+'B$' : vol > 1e6 ? (vol/1e6).toFixed(1)+'M$' : fmtN(vol,0)+'$'}</div></div>
-      </div>
-
-      <div class="dp-grid">
-        <div class="dp-item"><div class="dp-label">RSI</div><div class="dp-val" style="color:${typeof rsi==='number'?rsiColor(rsi):'var(--muted)'}">${rsi} <span style="font-size:10px;color:var(--muted)">${l?.rsi_analyse||''}</span></div></div>
-        <div class="dp-item"><div class="dp-label">Support estimé</div><div class="dp-val sm green">${l?.support ? fmt(l.support,4) : '—'}</div></div>
-        <div class="dp-item"><div class="dp-label">Résistance estimée</div><div class="dp-val sm red">${l?.resistance ? fmt(l.resistance,4) : '—'}</div></div>
-        <div class="dp-item"><div class="dp-label">Stop-loss (-7%)</div><div class="dp-val sm red">${fmt(sl,2)}</div></div>
-      </div>
-
-      <div class="dp-item" style="margin-bottom:10px"><div class="dp-label">Take-profit (+18%)</div><div class="dp-val green">${fmt(tp,2)}</div></div>
-
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Scores par composante</div>
-      <div class="scores-grid">
-        ${[['Technique',l?.score_technique],['Sentiment',l?.score_sentiment],['Macro',l?.score_macro],['Momentum',l?.score_momentum],['Volume',l?.score_volume]].map(([lbl,v])=>`
-          <div class="score-item">
-            <div class="score-label">${lbl}</div>
-            <div class="score-val" style="color:${scoreColor(v??50)}">${v??'—'}</div>
-            <div class="score-mini-bar"><div class="score-mini-fill" style="width:${v??50}%;background:${scoreColor(v??50)}"></div></div>
-          </div>`).join('')}
-      </div>
-
-      <div class="analysis-row">
-        <div class="analysis-box"><div class="abox-title">📊 Analyse IA</div>${l?.raison||'Analyse non disponible'}</div>
-        <div class="analysis-box risk"><div class="abox-title">⚠ Risque principal</div>${l?.risque||'Non identifié'}</div>
-        <div class="analysis-box opp"><div class="abox-title">💡 Opportunité</div>${l?.opportunite||'Non identifiée'}</div>
-      </div>
-
-      ${pos ? `<div class="dp-item" style="margin-top:10px;border-color:var(--purple)">
-        <div class="dp-label purple">Position ouverte — ${fmt(pos.amount_eur,2)}</div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px">
-          <span>Entrée : <strong>${fmt(pos.entry_price_eur,2)}</strong></span>
-          <span class="${priceEur > pos.entry_price_eur ? 'green' : 'red'}">PnL : ${(((priceEur - pos.entry_price_eur) / pos.entry_price_eur)*100).toFixed(2)}%</span>
-          <span class="muted">Ouvert : ${new Date(pos.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
-        </div>
-      </div>` : ''}
-    </div>`;
+# ─── PRIX COINGECKO (crypto) ─────────────────────────────────────
+# CoinGecko est accessible depuis GitHub Actions (contrairement à Binance)
+COINGECKO_IDS = {
+    "BTC":  "bitcoin",
+    "ETH":  "ethereum",
+    "SOL":  "solana",
+    "BNB":  "binancecoin",
+    "XRP":  "ripple",
+    "ADA":  "cardano",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "DOT":  "polkadot",
+    "MATIC":"matic-network",
 }
 
-// Listes de secours pour typage des actifs
-const KNOWN_CRYPTO = new Set(["BTC","ETH","SOL","BNB","XRP","ADA","AVAX","LINK","DOT","MATIC"]);
-const KNOWN_STOCK  = new Set(["NVDA","AAPL","MSFT","GOOGL","TSLA","AMZN","META"]);
-const KNOWN_ETF    = new Set(["SPY","QQQ","GLD","VTI","ARKK","CW8","SP5","C40","PANX","AEME"]);
+def get_binance_prices():
+    prices = {}
+    try:
+        ids = ",".join(COINGECKO_IDS.values())
+        r = requests.get(
+            f"https://api.coingecko.com/api/v3/coins/markets"
+            f"?vs_currency=usd&ids={ids}&order=market_cap_desc"
+            f"&per_page=20&page=1&sparkline=false&price_change_percentage=24h",
+            headers={"Accept": "application/json"},
+            timeout=15
+        )
+        data = r.json()
+        # Map coingecko id → ticker
+        id_to_ticker = {v: k for k, v in COINGECKO_IDS.items()}
+        for coin in data:
+            key = id_to_ticker.get(coin["id"])
+            if not key:
+                continue
+            info = CRYPTO_ASSETS[key]
+            prices[key] = {
+                "price_usd":  float(coin["current_price"]),
+                "change_24h": float(coin.get("price_change_percentage_24h") or 0),
+                "volume_usd": float(coin.get("total_volume") or 0),
+                "high_24h":   float(coin.get("high_24h") or coin["current_price"]),
+                "low_24h":    float(coin.get("low_24h")  or coin["current_price"]),
+                "name":       info["name"],
+                "type":       "crypto",
+                "source":     "CoinGecko LIVE"
+            }
+            print(f"  [OK] {key} = {float(coin['current_price']):.4f} USD ({float(coin.get('price_change_percentage_24h') or 0):+.2f}%)")
+    except Exception as e:
+        print(f"  [ERREUR CoinGecko] {e}")
+    return prices
 
-function getType(k) {
-  const p = state?.last_prices || {};
-  const lb = {};
-  history.slice().reverse().forEach(h => { if (!lb[h.asset]) lb[h.asset] = h; });
-  const t = p[k]?.type || lb[k]?.type;
-  if (t) return t;
-  if (KNOWN_CRYPTO.has(k)) return "crypto";
-  if (KNOWN_STOCK.has(k))  return "stock";
-  if (KNOWN_ETF.has(k))    return "etf";
-  return "crypto";
-}
+# ─── PRIX YAHOO FINANCE (actions + ETFs) ─────────────────────────
+def get_yahoo_price(ticker, name, asset_type):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=10d",
+            headers=headers, timeout=10
+        )
+        data   = r.json()
+        result = data["chart"]["result"][0]
+        meta   = result["meta"]
+        price  = float(meta.get("regularMarketPrice", 0))
+        prev   = float(meta.get("chartPreviousClose", meta.get("previousClose", price)))
+        change = ((price - prev) / prev * 100) if prev else 0
 
-// ─── RENDER CARDS ─────────────────────────────────────────────────
-function renderAllCards() {
-  if (!state) return;
-  const prices = state.last_prices || {};
-  const lastByAsset = {};
-  history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
+        closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+        closes = [c for c in closes if c is not None]
+        rsi = compute_rsi(closes) if len(closes) >= 3 else 50
 
-  // Toujours afficher TOUS les actifs connus, même sans données encore
-  const allKnown = [
-    ...KNOWN_CRYPTO, ...KNOWN_STOCK, ...KNOWN_ETF
-  ];
-  const fromData = [...new Set([...Object.keys(prices), ...Object.keys(lastByAsset)])];
-  const all = [...new Set([...allKnown, ...fromData])];
+        print(f"  [OK] {ticker} = {price:.2f} USD ({change:+.2f}%) RSI={rsi}")
+        return {
+            "price_usd":  price,
+            "change_24h": round(change, 2),
+            "volume_usd": int(meta.get("regularMarketVolume", 0)) * price,
+            "high_24h":   float(meta.get("regularMarketDayHigh", price)),
+            "low_24h":    float(meta.get("regularMarketDayLow", price)),
+            "rsi":        rsi,
+            "name":       name,
+            "type":       asset_type,
+            "source":     "Yahoo Finance LIVE"
+        }
+    except Exception as e:
+        print(f"  [ERREUR] {ticker}: {e}")
+        return None
 
-  const cryptos = all.filter(k => getType(k) === 'crypto');
-  const stocks  = all.filter(k => getType(k) === 'stock');
-  const etfs    = all.filter(k => getType(k) === 'etf');
+def get_stock_prices():
+    prices = {}
+    for key, info in STOCK_ASSETS.items():
+        result = get_yahoo_price(info["ticker"], info["name"], "stock")
+        if result:
+            prices[key] = result
+        time.sleep(0.3)
+    return prices
 
-  const renderSet = (ids, container) => {
-    const el = document.getElementById(container);
-    if (el) el.innerHTML = ids.map(assetCardHTML).filter(Boolean).join('') ||
-      '<div class="empty">En attente du prochain cycle du bot...</div>';
-  };
+def get_etf_prices():
+    prices = {}
+    for key, info in ETF_ASSETS.items():
+        result = get_yahoo_price(info["ticker"], info["name"], "etf")
+        if result:
+            prices[key] = result
+        time.sleep(0.3)
+    return prices
 
-  renderSet(all,    'allAssets');
-  renderSet(cryptos,'cryptoCards');
-  renderSet(stocks, 'stockCards');
-  renderSet(etfs,   'etfCards');
+# ─── ANALYSE CLAUDE AI ────────────────────────────────────────────
+def analyze_with_claude(asset, info):
+    type_label = {"crypto": "crypto-monnaie", "stock": "action", "etf": "ETF"}.get(info.get("type",""), "actif")
+    rsi_val = info.get("rsi", "N/A")
+    try:
+        prompt = f"""Tu es un analyste financier IA expert en trading algorithmique.
+Analyse cette {type_label} : {info['name']} ({asset})
+- Prix : {info['price_usd']:.4f} USD
+- Variation 24h : {info['change_24h']:+.2f}%
+- High 24h : {info.get('high_24h', 0):.4f} | Low 24h : {info.get('low_24h', 0):.4f}
+- Volume 24h : {info.get('volume_usd', 0):,.0f} USD
+- RSI : {rsi_val}
+- Date : {datetime.now().strftime('%d/%m/%Y %H:%M')} UTC
 
-  // KPI signaux achat
-  const buySignals = all.filter(k => history.slice().reverse().find(h => h.asset === k)?.signal === 'BUY');
-  document.getElementById('kpiBuy').textContent = buySignals.length;
-  document.getElementById('kpiAssets').textContent = all.length;
-}
+Réponds UNIQUEMENT en JSON valide sans markdown :
+{{
+  "score_technique": <0-100>,
+  "score_sentiment": <0-100>,
+  "score_macro": <0-100>,
+  "score_momentum": <0-100>,
+  "score_volume": <0-100>,
+  "signal": "<BUY|SELL|HOLD>",
+  "confiance": <0-100>,
+  "tendance": "<HAUSSIERE|BAISSIERE|NEUTRE>",
+  "support": <prix support en USD, nombre>,
+  "resistance": <prix résistance en USD, nombre>,
+  "rsi_analyse": "<suracheté|survendu|neutre>",
+  "raison": "<analyse en français, max 3 phrases>",
+  "risque_principal": "<risque en français, 1 phrase>",
+  "opportunite": "<opportunité en français, 1 phrase>"
+}}"""
 
-// Fonctions dédiées par onglet — toujours afficher tous les actifs connus
-function renderCryptoCards() {
-  const el = document.getElementById('cryptoCards');
-  if (!el) return;
-  const html = [...KNOWN_CRYPTO].map(assetCardHTML).join('');
-  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
-}
-function renderStockCards() {
-  const el = document.getElementById('stockCards');
-  if (!el) return;
-  const html = [...KNOWN_STOCK].map(assetCardHTML).join('');
-  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
-}
-function renderEtfCards() {
-  const el = document.getElementById('etfCards');
-  if (!el) return;
-  const html = [...KNOWN_ETF].map(assetCardHTML).join('');
-  el.innerHTML = html || '<div class="empty">Aucune donnée disponible</div>';
-}
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": CLAUDE_KEY,
+                "anthropic-version": "2023-06-01"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 600,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=30
+        )
+        text = r.json()["content"][0]["text"].strip()
+        text = text.replace("```json", "").replace("```", "").strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"  [CLAUDE ERREUR] {asset}: {e}")
+        return {
+            "score_technique": 50, "score_sentiment": 50,
+            "score_macro": 50, "score_momentum": 50, "score_volume": 50,
+            "signal": "HOLD", "confiance": 50,
+            "tendance": "NEUTRE", "support": 0, "resistance": 0,
+            "rsi_analyse": "neutre",
+            "raison": "Analyse indisponible.",
+            "risque_principal": "Données insuffisantes.",
+            "opportunite": "Données insuffisantes."
+        }
 
-// ─── RENDER HISTORY ───────────────────────────────────────────────
-function renderHistory() {
-  const fType   = document.getElementById('filterType')?.value || '';
-  const fAction = document.getElementById('filterAction')?.value || '';
-  const fAsset  = document.getElementById('filterAsset')?.value || '';
+# ─── CALCUL SCORE GLOBAL ─────────────────────────────────────────
+def compute_global_score(analysis):
+    weights = {
+        "score_technique": 0.25,
+        "score_sentiment": 0.20,
+        "score_macro":     0.20,
+        "score_momentum":  0.20,
+        "score_volume":    0.15,
+    }
+    return round(min(100, max(0, sum(analysis.get(k, 50) * w for k, w in weights.items()))))
 
-  // Populate asset filter
-  const sel = document.getElementById('filterAsset');
-  if (sel && sel.children.length <= 1) {
-    const assets = [...new Set(history.map(h => h.asset))].sort();
-    assets.forEach(a => {
-      const o = document.createElement('option');
-      o.value = a; o.textContent = a;
-      sel.appendChild(o);
-    });
-  }
+# ─── EXÉCUTION ORDRE BITPANDA ────────────────────────────────────
+def place_order_bitpanda(asset, side, amount_eur):
+    if DRY_RUN:
+        print(f"  [DRY RUN] {side} {asset} pour {amount_eur}€")
+        return {"status": "simulated"}
+    try:
+        r = requests.get("https://api.exchange.bitpanda.com/public/v1/instruments", timeout=10)
+        instrument_id = None
+        for inst in r.json():
+            if inst.get("base", {}).get("code") == asset and inst.get("quote", {}).get("code") == "EUR":
+                instrument_id = inst["instrument_code"]
+                break
+        if not instrument_id:
+            return None
+        r = requests.post(
+            "https://api.exchange.bitpanda.com/public/v1/account/orders",
+            headers={"Authorization": f"Bearer {BITPANDA_KEY}", "Content-Type": "application/json"},
+            json={"instrument_code": instrument_id, "type": "MARKET", "side": side, "amount": str(amount_eur)},
+            timeout=15
+        )
+        return r.json()
+    except Exception as e:
+        print(f"  [BITPANDA ERREUR] {e}")
+        return None
 
-  let rows = history.slice().reverse();
-  if (fType)   rows = rows.filter(h => h.type === fType);
-  if (fAction) rows = rows.filter(h => h.action === fAction);
-  if (fAsset)  rows = rows.filter(h => h.asset === fAsset);
-  rows = rows.slice(0, 200);
+# ─── CHARGEMENT / SAUVEGARDE ─────────────────────────────────────
+def load_json(path, default):
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return default
 
-  document.getElementById('historyBody').innerHTML = rows.length === 0
-    ? '<tr><td colspan="11" class="empty">Aucun résultat</td></tr>'
-    : rows.map(h => {
-        const d = new Date(h.timestamp);
-        const priceStr = h.price_eur < 1 ? fmt(h.price_eur,6) : h.price_eur < 100 ? fmt(h.price_eur,4) : fmt(h.price_eur,2);
-        return `<tr>
-          <td class="muted" style="white-space:nowrap">${d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-          <td><strong>${h.asset}</strong><br><span class="muted" style="font-size:9px">${h.name||''}</span></td>
-          <td>${typeBadge(h.type||'crypto')}</td>
-          <td>${priceStr}</td>
-          <td class="${h.change_24h>=0?'green':'red'}">${h.change_24h>=0?'+':''}${h.change_24h?.toFixed(2)||0}%</td>
-          <td style="color:${typeof h.rsi==='number'?rsiColor(h.rsi):'var(--muted)'}">${typeof h.rsi==='number'?h.rsi:h.rsi||'—'}</td>
-          <td style="color:${scoreColor(h.score)}">${h.score}</td>
-          <td><span class="signal-badge ${sigClass(h.signal)}">${sigLabel(h.signal)}</span></td>
-          <td>${actBadge(h.action)}</td>
-          <td>${tendBadge(h.tendance||'NEUTRE')}</td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${h.raison||''}">${h.raison||'—'}</td>
-        </tr>`;
-      }).join('');
-}
+def save_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
-// ─── RENDER POSITIONS ─────────────────────────────────────────────
-function renderPositions() {
-  if (!state) return;
-  const pos = state.positions || {};
-  const prices = state.last_prices || {};
-  const keys = Object.keys(pos);
+# ─── BOT PRINCIPAL ───────────────────────────────────────────────
+def run_bot():
+    print(f"\n{'='*55}")
+    print(f"  HAOUD TRADING IA — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} UTC")
+    print(f"{'='*55}\n")
 
-  if (keys.length === 0) {
-    document.getElementById('posCard').innerHTML = '<div class="empty">Aucune position ouverte</div>';
-  } else {
-    document.getElementById('posCard').innerHTML = `<div class="table-wrap"><table class="pos-table">
-      <thead><tr><th>Actif</th><th>Type</th><th>Entrée</th><th>Montant</th><th>Prix actuel</th><th>PnL %</th><th>PnL €</th><th>Stop-Loss</th><th>Take-Profit</th><th>Ouvert le</th></tr></thead>
-      <tbody>${keys.map(k => {
-        const p = pos[k];
-        const cur = prices[k]?.price_eur || p.entry_price_eur;
-        const pnl_pct = ((cur - p.entry_price_eur) / p.entry_price_eur) * 100;
-        const pnl_eur = (cur - p.entry_price_eur) / p.entry_price_eur * p.amount_eur;
-        return `<tr>
-          <td><strong>${k}</strong></td>
-          <td>${typeBadge(prices[k]?.type||'crypto')}</td>
-          <td>${fmt(p.entry_price_eur,2)}</td>
-          <td>${fmt(p.amount_eur,2)}</td>
-          <td>${fmt(cur,2)}</td>
-          <td class="${pnl_pct>=0?'green':'red'}">${pnl_pct>=0?'+':''}${pnl_pct.toFixed(2)}%</td>
-          <td class="${pnl_eur>=0?'green':'red'}">${pnl_eur>=0?'+':''}${fmt(pnl_eur,2)}</td>
-          <td class="red">${fmt(p.entry_price_eur*0.93,2)}</td>
-          <td class="green">${fmt(p.entry_price_eur*1.18,2)}</td>
-          <td class="muted">${new Date(p.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
-  }
+    eur_rate = get_eur_rate()
+    print(f"[FX] 1 USD = {eur_rate:.4f} EUR\n")
 
-  // PnL stats
-  const trades = history.filter(h => h.action !== 'HOLD');
-  const wins   = trades.filter(h => h.action === 'TAKE_PROFIT').length;
-  const loss   = trades.filter(h => h.action === 'STOP_LOSS').length;
-  const stops  = loss;
-  const tps    = wins;
-  const invested = keys.reduce((s, k) => s + (pos[k]?.amount_eur || 0), 0);
-  document.getElementById('pnlTotal').innerHTML = `<span class="${(state.total_pnl_eur||0)>=0?'green':'red'}">${fmt(state.total_pnl_eur||0)}</span>`;
-  document.getElementById('pnlWins').textContent = wins;
-  document.getElementById('pnlLoss').textContent = loss;
-  document.getElementById('pnlStop').textContent = stops;
-  document.getElementById('pnlTp').textContent   = tps;
-  document.getElementById('pnlInvested').textContent = fmt(invested);
-}
+    print("[CRYPTO] Binance...")
+    all_prices = {}
+    all_prices.update(get_binance_prices())
 
-// ─── RENDER GLOBAL ────────────────────────────────────────────────
-function render() {
-  if (!state) return;
-  const pnl = state.total_pnl_eur || 0;
-  document.getElementById('kpiPnl').innerHTML = `<span class="${pnl>=0?'green':'red'}">${fmt(pnl)}</span>`;
-  document.getElementById('kpiPos').textContent = Object.keys(state.positions||{}).length;
-  document.getElementById('kpiRate').textContent = state.eur_rate ? (1/state.eur_rate).toFixed(4) : '—';
-  document.getElementById('fxPill').textContent = state.eur_rate ? `1 USD = ${state.eur_rate.toFixed(4)} €` : 'EUR/USD: —';
+    print("\n[ACTIONS] Yahoo Finance...")
+    all_prices.update(get_stock_prices())
 
-  const trades = history.filter(h => h.action !== 'HOLD');
-  document.getElementById('kpiOrders').textContent = trades.length;
+    print("\n[ETFs] Yahoo Finance...")
+    all_prices.update(get_etf_prices())
 
-  document.getElementById('modePill').innerHTML = state.dry_run !== false
-    ? '<span class="mode-warning">⚠ SIMULATION</span>'
-    : '<span style="color:var(--green);font-size:10px">✓ TRADING RÉEL</span>';
+    history   = load_json(HISTORY_FILE, [])
+    bot_state = load_json(STATE_FILE, {"positions": {}, "last_run": None, "total_pnl_eur": 0})
 
-  if (state.last_run) {
-    const d = new Date(state.last_run);
-    document.getElementById('lastRunPill').textContent = 'Run: ' + d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  }
+    print(f"\n[ANALYSE IA] {len(all_prices)} actifs...\n")
+    results = []
 
-  renderAllCards();
-  renderCryptoCards();
-  renderStockCards();
-  renderEtfCards();
+    for asset, price_data in all_prices.items():
+        price_usd = price_data["price_usd"]
+        price_eur = price_usd * eur_rate
+        change    = price_data["change_24h"]
+        name      = price_data.get("name", asset)
+        atype     = price_data.get("type", "crypto")
 
-  if (selectedAsset) selectAsset(selectedAsset);
-  if (document.getElementById('page-history').classList.contains('active')) renderHistory();
-  if (document.getElementById('page-positions').classList.contains('active')) renderPositions();
-}
+        print(f"[{asset}] {name} — {price_eur:.4f}€ ({change:+.2f}%)")
 
-// ─── DÉMARRAGE ────────────────────────────────────────────────────
-loadData();
-setInterval(loadData, REFRESH_MS);
-</script>
-</body>
-</html>
+        analysis     = analyze_with_claude(asset, price_data)
+        global_score = compute_global_score(analysis)
+        signal       = analysis.get("signal", "HOLD")
+
+        print(f"  → Score: {global_score} | {signal} | {analysis.get('tendance','?')}")
+
+        action_taken = None
+        position     = bot_state["positions"].get(asset)
+
+        if position:
+            entry_price = position["entry_price_eur"]
+            pnl_pct     = (price_eur - entry_price) / entry_price
+            if pnl_pct <= -STOP_LOSS_PCT:
+                place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
+                del bot_state["positions"][asset]
+                action_taken = "STOP_LOSS"
+                print(f"  ⚠ STOP-LOSS déclenché ({pnl_pct*100:.1f}%)")
+            elif pnl_pct >= TAKE_PROFIT_PCT:
+                place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
+                del bot_state["positions"][asset]
+                action_taken = "TAKE_PROFIT"
+                print(f"  ✓ TAKE-PROFIT déclenché ({pnl_pct*100:.1f}%)")
+        elif signal == "BUY" and global_score >= MIN_SCORE_BUY and not position:
+            place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
+            bot_state["positions"][asset] = {"entry_price_eur": price_eur, "amount_eur": MAX_TRADE_EUR, "entry_date": datetime.now().isoformat()}
+            action_taken = "BUY"
+            print(f"  ✓ ACHAT")
+        elif signal == "SELL" and global_score <= MAX_SCORE_SELL and position:
+            place_order_bitpanda(asset, "SELL", position["amount_eur"])
+            del bot_state["positions"][asset]
+            action_taken = "SELL"
+            print(f"  ✓ VENTE")
+
+        entry = {
+            "timestamp":       datetime.now().isoformat(),
+            "asset":           asset,
+            "name":            name,
+            "type":            atype,
+            "price_eur":       round(price_eur, 6),
+            "price_usd":       round(price_usd, 6),
+            "change_24h":      round(change, 2),
+            "high_24h":        round(price_data.get("high_24h", 0) * eur_rate, 6),
+            "low_24h":         round(price_data.get("low_24h", 0) * eur_rate, 6),
+            "volume_usd":      round(price_data.get("volume_usd", 0), 0),
+            "rsi":             price_data.get("rsi", 50),
+            "score":           global_score,
+            "score_technique": analysis.get("score_technique", 50),
+            "score_sentiment": analysis.get("score_sentiment", 50),
+            "score_macro":     analysis.get("score_macro", 50),
+            "score_momentum":  analysis.get("score_momentum", 50),
+            "score_volume":    analysis.get("score_volume", 50),
+            "signal":          signal,
+            "confiance":       analysis.get("confiance", 50),
+            "tendance":        analysis.get("tendance", "NEUTRE"),
+            "support":         round(analysis.get("support", 0) * eur_rate, 4),
+            "resistance":      round(analysis.get("resistance", 0) * eur_rate, 4),
+            "rsi_analyse":     analysis.get("rsi_analyse", "neutre"),
+            "action":          action_taken or "HOLD",
+            "raison":          analysis.get("raison", ""),
+            "risque":          analysis.get("risque_principal", ""),
+            "opportunite":     analysis.get("opportunite", ""),
+            "source":          price_data.get("source", ""),
+            "dry_run":         DRY_RUN
+        }
+        history.append(entry)
+        results.append(entry)
+
+    history = history[-1000:]
+    bot_state["last_run"]    = datetime.now().isoformat()
+    bot_state["eur_rate"]    = eur_rate
+    bot_state["dry_run"]     = DRY_RUN
+    bot_state["last_prices"] = {
+        k: {
+            "price_eur":  round(v["price_usd"] * eur_rate, 6),
+            "price_usd":  round(v["price_usd"], 6),
+            "change_24h": round(v["change_24h"], 2),
+            "high_24h":   round(v.get("high_24h", 0) * eur_rate, 6),
+            "low_24h":    round(v.get("low_24h", 0) * eur_rate, 6),
+            "volume_usd": round(v.get("volume_usd", 0), 0),
+            "rsi":        v.get("rsi", 50),
+            "name":       v.get("name", k),
+            "type":       v.get("type", "crypto"),
+            "source":     v.get("source", "")
+        } for k, v in all_prices.items()
+    }
+
+    save_json(HISTORY_FILE, history)
+    save_json(STATE_FILE, bot_state)
+
+    actions = [e for e in results if e["action"] != "HOLD"]
+    print(f"\n{'='*55}")
+    print(f"  DONE — {len(results)} actifs | {len(actions)} ordres | PnL: {bot_state['total_pnl_eur']:.2f}€")
+    print(f"{'='*55}\n")
+
+if __name__ == "__main__":
+    run_bot()
