@@ -40,7 +40,8 @@ jobs:
       - name: Commit et push des résultats
         run: |
           git config --local user.email "bot@nexus-trading.ai"
-          git config --local user.name "NEXUS Bot"
+          git config --local user.name "HAOUD Bot"
           git add docs/trade_history.json docs/bot_state.json
           git diff --staged --quiet || git commit -m "🤖 Bot update — $(date '+%d/%m/%Y %H:%M') UTC"
+          git pull --rebase origin main
           git push
