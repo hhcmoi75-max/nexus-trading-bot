@@ -3,341 +3,612 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS Trading AI — Dashboard</title>
+<title>HAOUD TRADING IA</title>
 <style>
-  :root {
-    --bg: #0d0f14; --bg2: #161920; --bg3: #1e2230;
-    --border: #2a2d3a; --text: #e8eaf0; --muted: #8890a8;
-    --green: #4caf7d; --red: #e05c5c; --amber: #e8a838;
-    --purple: #7c6af7; --blue: #4a9eff;
-    --green-bg: rgba(76,175,125,0.1); --red-bg: rgba(224,92,92,0.1); --amber-bg: rgba(232,168,56,0.1);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; font-size: 13px; }
-  .topbar { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; position: sticky; top: 0; z-index: 100; }
-  .logo { font-size: 15px; font-weight: bold; letter-spacing: 0.2em; color: var(--purple); }
-  .logo span { color: var(--text); }
-  .status-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .status-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 10px; border-radius: 20px; background: var(--bg3); border: 1px solid var(--border); color: var(--muted); }
-  .dot { width: 6px; height: 6px; border-radius: 50%; }
-  .dot.green { background: var(--green); animation: pulse 2s infinite; }
-  .dot.red { background: var(--red); }
-  .dot.amber { background: var(--amber); animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
-  .refresh-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; cursor: pointer; font-family: monospace; font-size: 11px; }
-  .refresh-btn:hover { background: var(--bg3); color: var(--text); }
-  .main { padding: 16px 20px; max-width: 1200px; margin: 0 auto; }
-  .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 12px; margin-top: 20px; }
-  .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-  @media(max-width:900px) { .grid-5 { grid-template-columns: repeat(3,1fr); } .grid-3,.grid-2 { grid-template-columns: 1fr; } }
-  @media(max-width:600px) { .grid-5 { grid-template-columns: repeat(2,1fr); } }
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-  .card-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
-  .card-value { font-size: 20px; font-weight: bold; }
-  .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .green { color: var(--green); } .red { color: var(--red); } .amber { color: var(--amber); } .purple { color: var(--purple); } .blue { color: var(--blue); }
-  .asset-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color 0.2s; }
-  .asset-card:hover, .asset-card.active { border-color: var(--purple); }
-  .asset-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .asset-name { font-weight: bold; font-size: 14px; }
-  .asset-sym { font-size: 10px; color: var(--muted); }
-  .asset-price { text-align: right; }
-  .asset-price .price { font-size: 15px; font-weight: bold; }
-  .asset-price .chg { font-size: 11px; }
-  .signal-badge { display: inline-block; font-size: 11px; padding: 2px 10px; border-radius: 4px; font-weight: bold; letter-spacing: 0.05em; }
-  .signal-buy { background: var(--green-bg); color: var(--green); border: 1px solid rgba(76,175,125,0.3); }
-  .signal-sell { background: var(--red-bg); color: var(--red); border: 1px solid rgba(224,92,92,0.3); }
-  .signal-hold { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(232,168,56,0.3); }
-  .score-bar { height: 4px; background: var(--bg3); border-radius: 2px; margin-top: 8px; overflow: hidden; }
-  .score-fill { height: 100%; border-radius: 2px; transition: width 0.6s; }
-  .detail-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-  @media(max-width:700px) { .detail-grid { grid-template-columns: 1fr 1fr; } }
-  .detail-item { background: var(--bg3); border-radius: 8px; padding: 10px 12px; }
-  .detail-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-  .detail-val { font-size: 15px; font-weight: bold; }
-  .analysis-box { background: var(--bg3); border-radius: 8px; padding: 12px; font-size: 12px; color: var(--muted); line-height: 1.7; white-space: pre-wrap; margin-top: 12px; border-left: 3px solid var(--purple); }
-  .risk-box { background: var(--red-bg); border: 1px solid rgba(224,92,92,0.2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--red); margin-top: 8px; }
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th { text-align: left; padding: 8px 10px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border); }
-  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: var(--bg3); }
-  .action-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 3px; font-weight: bold; }
-  .action-buy { background: var(--green-bg); color: var(--green); }
-  .action-sell { background: var(--red-bg); color: var(--red); }
-  .action-hold { background: var(--bg3); color: var(--muted); }
-  .action-stop { background: rgba(224,92,92,0.2); color: var(--red); }
-  .action-tp { background: rgba(76,175,125,0.2); color: var(--green); }
-  .pnl-card { text-align: center; padding: 20px; }
-  .pnl-value { font-size: 32px; font-weight: bold; margin: 8px 0; }
-  .mode-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--amber); color: var(--amber); background: var(--amber-bg); }
-  .empty { color: var(--muted); text-align: center; padding: 30px; font-size: 12px; }
-  .loading { color: var(--muted); text-align: center; padding: 40px; }
+:root {
+  --bg:#0b0d12; --bg2:#13151d; --bg3:#1a1d27; --bg4:#21253200;
+  --border:#252836; --border2:#2e3245;
+  --text:#e8eaf0; --muted:#7880a0; --muted2:#505878;
+  --green:#3ddc84; --red:#ff5c6a; --amber:#ffb547; --blue:#5b9cf6;
+  --purple:#8b7ff7; --cyan:#36d9c8; --orange:#ff8c42;
+  --green-bg:rgba(61,220,132,.1); --red-bg:rgba(255,92,106,.1);
+  --amber-bg:rgba(255,181,71,.1); --blue-bg:rgba(91,156,246,.1);
+  --purple-bg:rgba(139,127,247,.1); --cyan-bg:rgba(54,217,200,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px;min-height:100vh}
+
+/* TOPBAR */
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100;backdrop-filter:blur(10px)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--purple),var(--cyan));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.logo-text{font-size:14px;font-weight:bold;letter-spacing:.15em;color:var(--text)}
+.logo-text span{color:var(--purple)}
+.logo-sub{font-size:9px;color:var(--muted);letter-spacing:.08em;margin-top:1px}
+.topright{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:20px;background:var(--bg3);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot.green{background:var(--green);animation:blink 2s infinite}
+.dot.amber{background:var(--amber);animation:blink 1s infinite}
+.dot.red{background:var(--red)}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+.btn{background:var(--bg3);border:1px solid var(--border2);color:var(--muted);padding:4px 12px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:10px;letter-spacing:.05em;transition:all .2s}
+.btn:hover{background:var(--purple-bg);border-color:var(--purple);color:var(--purple)}
+
+/* TABS */
+.tabs{display:flex;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px}
+.tab{padding:10px 18px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.06em;transition:all .2s}
+.tab.active{color:var(--purple);border-bottom-color:var(--purple)}
+.tab:hover:not(.active){color:var(--text)}
+
+/* MAIN */
+.main{padding:16px 20px;max-width:1400px;margin:0 auto}
+.page{display:none}.page.active{display:block}
+.sec-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin:20px 0 10px;display:flex;align-items:center;gap:8px}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* GRIDS */
+.grid-kpi{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.grid-cat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:1100px){.grid-kpi{grid-template-columns:repeat(3,1fr)}.grid-cat{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.grid-kpi,.grid-cat{grid-template-columns:repeat(2,1fr)}}
+
+/* CARDS */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.kpi-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px}
+.kpi-val{font-size:18px;font-weight:bold}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:3px}
+
+/* ASSET CARDS */
+.asset-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.asset-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .2s}
+.asset-card:hover,.asset-card.active{border-color:var(--purple)}
+.asset-card.active::before{background:linear-gradient(90deg,var(--purple),var(--cyan))}
+.asset-card.type-crypto::before{background:transparent}
+.asset-card.active.type-crypto::before{background:linear-gradient(90deg,var(--amber),var(--orange))}
+.asset-card.active.type-stock::before{background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.asset-card.active.type-etf::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.ac-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.ac-left .ac-ticker{font-weight:bold;font-size:13px;display:flex;align-items:center;gap:5px}
+.ac-left .ac-name{font-size:9px;color:var(--muted);margin-top:2px}
+.ac-right{text-align:right}
+.ac-price{font-size:13px;font-weight:bold}
+.ac-chg{font-size:10px;margin-top:1px}
+.ac-mid{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.ac-hl{font-size:9px;color:var(--muted)}
+.signal-badge{font-size:9px;padding:2px 7px;border-radius:3px;font-weight:bold;letter-spacing:.05em}
+.sig-buy{background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.25)}
+.sig-sell{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,92,106,.25)}
+.sig-hold{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(255,181,71,.25)}
+.score-bar{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.score-fill{height:100%;border-radius:2px;transition:width .8s}
+.ac-footer{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.ac-score{font-size:10px}
+.ac-rsi{font-size:9px;color:var(--muted)}
+.pos-dot{width:5px;height:5px;border-radius:50%;background:var(--purple);display:inline-block;margin-left:4px;animation:blink 1.5s infinite}
+.type-badge{font-size:8px;padding:1px 5px;border-radius:3px;letter-spacing:.04em}
+.tb-crypto{background:var(--amber-bg);color:var(--amber)}
+.tb-stock{background:var(--blue-bg);color:var(--blue)}
+.tb-etf{background:var(--green-bg);color:var(--green)}
+
+/* DETAIL PANEL */
+.detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+.dp-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.dp-title{font-size:16px;font-weight:bold}
+.dp-subtitle{font-size:10px;color:var(--muted);margin-top:3px}
+.dp-signal{text-align:right}
+.dp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.dp-grid-wide{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+@media(max-width:800px){.dp-grid,.dp-grid-wide{grid-template-columns:repeat(2,1fr)}}
+.dp-item{background:var(--bg3);border-radius:8px;padding:10px 12px;border:1px solid var(--border)}
+.dp-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.dp-val{font-size:14px;font-weight:bold}
+.dp-val.sm{font-size:12px}
+.scores-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+@media(max-width:700px){.scores-grid{grid-template-columns:repeat(3,1fr)}}
+.score-item{background:var(--bg3);border-radius:8px;padding:8px 10px;border:1px solid var(--border);text-align:center}
+.score-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.score-val{font-size:18px;font-weight:bold}
+.score-mini-bar{height:3px;background:var(--border);border-radius:2px;margin-top:5px;overflow:hidden}
+.score-mini-fill{height:100%;border-radius:2px}
+
+/* ANALYSIS BOXES */
+.analysis-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+@media(max-width:700px){.analysis-row{grid-template-columns:1fr}}
+.analysis-box{background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--muted);line-height:1.65;border-left:3px solid var(--purple)}
+.analysis-box.risk{border-left-color:var(--red)}
+.analysis-box.opp{border-left-color:var(--green)}
+.abox-title{font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;color:var(--text)}
+
+/* TENDANCE */
+.tend-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:20px;font-weight:bold}
+.tend-up{background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.2)}
+.tend-down{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,92,106,.2)}
+.tend-neu{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(255,181,71,.2)}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:8px 10px;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+.action-badge{display:inline-block;font-size:9px;padding:2px 7px;border-radius:3px;font-weight:bold;letter-spacing:.04em}
+.ab-buy{background:var(--green-bg);color:var(--green)}
+.ab-sell{background:var(--red-bg);color:var(--red)}
+.ab-hold{background:var(--bg3);color:var(--muted)}
+.ab-stop{background:rgba(255,92,106,.2);color:var(--red)}
+.ab-tp{background:rgba(61,220,132,.2);color:var(--green)}
+
+/* POSITIONS */
+.pos-table th,.pos-table td{padding:10px 12px}
+.pnl-chip{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px}
+
+/* COLORS */
+.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.blue{color:var(--blue)}.purple{color:var(--purple)}.cyan{color:var(--cyan)}.muted{color:var(--muted)}
+
+.empty{color:var(--muted);text-align:center;padding:30px;font-size:11px}
+.mode-warning{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid var(--amber);color:var(--amber);background:var(--amber-bg)}
+.source-tag{font-size:8px;color:var(--muted2);padding:1px 5px;border-radius:3px;border:1px solid var(--border)}
 </style>
 </head>
 <body>
 
+<!-- TOPBAR -->
 <div class="topbar">
-  <div class="logo">NEXUS <span>TRADING AI</span></div>
-  <div class="status-row">
-    <div class="status-pill"><div class="dot amber" id="statusDot"></div><span id="statusText">Chargement...</span></div>
-    <div class="status-pill" id="fxPill">EUR/USD...</div>
-    <div class="status-pill" id="modePill">Mode: ...</div>
-    <button class="refresh-btn" onclick="loadData()">↻ Actualiser</button>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-text">HAOUD <span>TRADING IA</span></div>
+      <div class="logo-sub">AGENT AUTONOME · ANALYSE IA · MULTI-ACTIFS</div>
+    </div>
   </div>
+  <div class="topright">
+    <div class="pill"><div class="dot amber" id="statusDot"></div><span id="statusText">Chargement...</span></div>
+    <div class="pill" id="fxPill">EUR/USD</div>
+    <div class="pill" id="modePill">Mode...</div>
+    <div class="pill" id="lastRunPill">Dernier run...</div>
+    <button class="btn" onclick="loadData()">↻ Actualiser</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('dashboard',this)">📊 Dashboard</div>
+  <div class="tab" onclick="switchTab('crypto',this)">₿ Cryptos</div>
+  <div class="tab" onclick="switchTab('stocks',this)">📈 Actions</div>
+  <div class="tab" onclick="switchTab('etfs',this)">🏦 ETFs</div>
+  <div class="tab" onclick="switchTab('history',this)">📋 Historique</div>
+  <div class="tab" onclick="switchTab('positions',this)">💼 Positions</div>
 </div>
 
 <div class="main">
 
-  <!-- KPIs -->
-  <div class="section-title">Résumé du portefeuille</div>
-  <div class="grid-5" id="kpiGrid">
-    <div class="card"><div class="card-label">PnL Total</div><div class="card-value" id="kpiPnl">—</div><div class="card-sub">depuis le démarrage</div></div>
-    <div class="card"><div class="card-label">Positions ouvertes</div><div class="card-value purple" id="kpiPositions">—</div></div>
-    <div class="card"><div class="card-label">Trades exécutés</div><div class="card-value" id="kpiTrades">—</div><div class="card-sub">total</div></div>
-    <div class="card"><div class="card-label">Dernière analyse</div><div class="card-value" style="font-size:13px;" id="kpiLast">—</div></div>
-    <div class="card"><div class="card-label">Taux EUR/USD</div><div class="card-value blue" id="kpiRate">—</div></div>
+<!-- PAGE DASHBOARD -->
+<div id="page-dashboard" class="page active">
+  <div class="sec-title">Résumé portefeuille</div>
+  <div class="grid-kpi" id="kpiGrid">
+    <div class="card"><div class="kpi-label">PnL Total</div><div class="kpi-val" id="kpiPnl">—</div><div class="kpi-sub">depuis démarrage</div></div>
+    <div class="card"><div class="kpi-label">Positions</div><div class="kpi-val purple" id="kpiPos">—</div><div class="kpi-sub">ouvertes</div></div>
+    <div class="card"><div class="kpi-label">Ordres</div><div class="kpi-val" id="kpiOrders">—</div><div class="kpi-sub">exécutés</div></div>
+    <div class="card"><div class="kpi-label">Actifs suivis</div><div class="kpi-val cyan" id="kpiAssets">—</div><div class="kpi-sub">crypto + actions + ETF</div></div>
+    <div class="card"><div class="kpi-label">Taux EUR/USD</div><div class="kpi-val blue" id="kpiRate">—</div></div>
+    <div class="card"><div class="kpi-label">Signaux ACHAT</div><div class="kpi-val green" id="kpiBuy">—</div><div class="kpi-sub">actuellement</div></div>
   </div>
 
-  <!-- Actifs -->
-  <div class="section-title">Actifs surveillés</div>
-  <div class="grid-5" id="assetCards">
-    <div class="loading">Chargement des actifs...</div>
+  <div id="detailSection" style="display:none">
+    <div class="sec-title" id="detailTitle">Détail actif</div>
+    <div id="detailContent"></div>
   </div>
 
-  <!-- Détail actif sélectionné -->
-  <div id="detailPanel" style="display:none;">
-    <div class="section-title" id="detailTitle">Détail</div>
-    <div class="detail-panel">
-      <div class="detail-grid" id="detailGrid"></div>
-      <div id="detailAnalysis"></div>
-    </div>
-  </div>
+  <div class="sec-title">Vue globale</div>
+  <div class="grid-cat" id="allAssets"></div>
+</div>
 
-  <!-- Positions ouvertes -->
-  <div class="section-title">Positions ouvertes</div>
-  <div class="card" id="positionsCard">
-    <div class="empty">Aucune position ouverte</div>
-  </div>
+<!-- PAGE CRYPTO -->
+<div id="page-crypto" class="page">
+  <div class="sec-title">Crypto-monnaies — Binance LIVE</div>
+  <div class="grid-cat" id="cryptoCards"></div>
+</div>
 
-  <!-- Historique des trades -->
-  <div class="section-title">Historique des trades</div>
+<!-- PAGE STOCKS -->
+<div id="page-stocks" class="page">
+  <div class="sec-title">Actions — Yahoo Finance LIVE</div>
+  <div class="grid-cat" id="stockCards"></div>
+</div>
+
+<!-- PAGE ETFs -->
+<div id="page-etfs" class="page">
+  <div class="sec-title">ETFs — Yahoo Finance LIVE</div>
+  <div class="grid-cat" id="etfCards"></div>
+</div>
+
+<!-- PAGE HISTORIQUE -->
+<div id="page-history" class="page">
+  <div class="sec-title">Historique complet</div>
   <div class="card">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <select id="filterType" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
+        <option value="">Tous les types</option>
+        <option value="crypto">Crypto</option>
+        <option value="stock">Actions</option>
+        <option value="etf">ETFs</option>
+      </select>
+      <select id="filterAction" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
+        <option value="">Toutes actions</option>
+        <option value="BUY">Achats</option>
+        <option value="SELL">Ventes</option>
+        <option value="HOLD">Attente</option>
+      </select>
+      <select id="filterAsset" onchange="renderHistory()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:monospace;font-size:11px">
+        <option value="">Tous les actifs</option>
+      </select>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Date / Heure</th>
-            <th>Actif</th>
-            <th>Prix</th>
-            <th>Variation</th>
-            <th>Score</th>
-            <th>Signal</th>
-            <th>Action</th>
-            <th>Raison IA</th>
-          </tr>
-        </thead>
-        <tbody id="historyBody">
-          <tr><td colspan="8" class="empty">Chargement de l'historique...</td></tr>
-        </tbody>
+        <thead><tr>
+          <th>Date</th><th>Actif</th><th>Type</th><th>Prix €</th><th>Var 24h</th>
+          <th>RSI</th><th>Score</th><th>Signal</th><th>Action</th><th>Tendance</th><th>Analyse IA</th>
+        </tr></thead>
+        <tbody id="historyBody"><tr><td colspan="11" class="empty">Chargement...</td></tr></tbody>
       </table>
     </div>
   </div>
-
 </div>
 
+<!-- PAGE POSITIONS -->
+<div id="page-positions" class="page">
+  <div class="sec-title">Positions ouvertes</div>
+  <div class="card" id="posCard"><div class="empty">Aucune position ouverte</div></div>
+
+  <div class="sec-title" style="margin-top:20px">Résumé PnL</div>
+  <div class="grid-kpi" id="pnlGrid">
+    <div class="card"><div class="kpi-label">PnL Total</div><div class="kpi-val" id="pnlTotal">—</div></div>
+    <div class="card"><div class="kpi-label">Trades gagnants</div><div class="kpi-val green" id="pnlWins">—</div></div>
+    <div class="card"><div class="kpi-label">Trades perdants</div><div class="kpi-val red" id="pnlLoss">—</div></div>
+    <div class="card"><div class="kpi-label">Stop-loss déclenchés</div><div class="kpi-val amber" id="pnlStop">—</div></div>
+    <div class="card"><div class="kpi-label">Take-profit déclenchés</div><div class="kpi-val cyan" id="pnlTp">—</div></div>
+    <div class="card"><div class="kpi-label">Montant investi</div><div class="kpi-val blue" id="pnlInvested">—</div></div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
 <script>
-// ─── CONFIG ────────────────────────────────────────────────────────
-// Remplace par l'URL raw de ton repo GitHub
-const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
-const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
-const REFRESH_MS  = 60000; // Rafraîchissement auto toutes les 60s
+// ─── CONFIG ── REMPLACE TON_PSEUDO PAR TON PSEUDO GITHUB ──────────
+const STATE_URL   = 'https://raw.githubusercontent.com/TON_PSEUDO/nexus-trading-bot/main/docs/bot_state.json';
+const HISTORY_URL = 'https://raw.githubusercontent.com/TON_PSEUDO/nexus-trading-bot/main/docs/trade_history.json';
+const REFRESH_MS  = 60000;
 
-// ─── DONNÉES ───────────────────────────────────────────────────────
-let state   = null;
-let history = [];
-let selectedAsset = null;
+let state = null, history = [], selectedAsset = null;
 
-// ─── CHARGEMENT ────────────────────────────────────────────────────
+// ─── NAVIGATION ───────────────────────────────────────────────────
+function switchTab(page, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('page-' + page).classList.add('active');
+  if (page === 'history') renderHistory();
+  if (page === 'positions') renderPositions();
+}
+
+// ─── CHARGEMENT ───────────────────────────────────────────────────
 async function loadData() {
   document.getElementById('statusDot').className = 'dot amber';
   document.getElementById('statusText').textContent = 'Mise à jour...';
   try {
-    const [sResp, hResp] = await Promise.all([
-      fetch(STATE_URL   + '?t=' + Date.now()),
+    const [sR, hR] = await Promise.all([
+      fetch(STATE_URL + '?t=' + Date.now()),
       fetch(HISTORY_URL + '?t=' + Date.now())
     ]);
-    state   = await sResp.json();
-    history = await hResp.json();
+    state   = await sR.json();
+    history = await hR.json();
     render();
     document.getElementById('statusDot').className = 'dot green';
-    document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
-  } catch (e) {
+    document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  } catch(e) {
     document.getElementById('statusDot').className = 'dot red';
     document.getElementById('statusText').textContent = 'Erreur de chargement';
-    console.error(e);
   }
 }
 
-// ─── RENDU ─────────────────────────────────────────────────────────
-function fmt(eur, dec=2) {
-  return new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', minimumFractionDigits:dec, maximumFractionDigits:dec}).format(eur);
+// ─── HELPERS ──────────────────────────────────────────────────────
+const fmt = (v, d=2) => v == null ? '—' : new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', minimumFractionDigits:d, maximumFractionDigits:d}).format(v);
+const fmtN = (v, d=2) => v == null ? '—' : new Intl.NumberFormat('fr-FR', {minimumFractionDigits:d, maximumFractionDigits:d}).format(v);
+const scoreColor = v => v >= 70 ? 'var(--green)' : v >= 50 ? 'var(--amber)' : 'var(--red)';
+const rsiColor = v => v > 70 ? 'var(--red)' : v < 30 ? 'var(--green)' : 'var(--amber)';
+const sigClass = s => s==='BUY'?'sig-buy':s==='SELL'?'sig-sell':'sig-hold';
+const sigLabel = s => s==='BUY'?'ACHAT':s==='SELL'?'VENTE':'ATTENTE';
+const tendBadge = t => t==='HAUSSIERE'?`<span class="tend-badge tend-up">↑ HAUSSIÈRE</span>`:t==='BAISSIERE'?`<span class="tend-badge tend-down">↓ BAISSIÈRE</span>`:`<span class="tend-badge tend-neu">→ NEUTRE</span>`;
+const typeBadge = t => t==='crypto'?`<span class="type-badge tb-crypto">CRYPTO</span>`:t==='stock'?`<span class="type-badge tb-stock">ACTION</span>`:`<span class="type-badge tb-etf">ETF</span>`;
+const actBadge = a => {
+  const m = {BUY:['ab-buy','ACHAT'],SELL:['ab-sell','VENTE'],HOLD:['ab-hold','ATTENTE'],STOP_LOSS:['ab-stop','STOP-LOSS'],TAKE_PROFIT:['ab-tp','TAKE-PROFIT']};
+  const [cls, lbl] = m[a] || ['ab-hold', a];
+  return `<span class="action-badge ${cls}">${lbl}</span>`;
+};
+
+// ─── ASSET CARD HTML ──────────────────────────────────────────────
+function assetCardHTML(k) {
+  const p = state?.last_prices?.[k];
+  const l = history.slice().reverse().find(h => h.asset === k);
+  if (!p && !l) return '';
+
+  const price   = p?.price_eur;
+  const chg     = p?.change_24h ?? l?.change_24h ?? 0;
+  const high    = p?.high_24h;
+  const low     = p?.low_24h;
+  const rsi     = p?.rsi ?? l?.rsi ?? '—';
+  const score   = l?.score ?? 50;
+  const sig     = l?.signal ?? 'HOLD';
+  const name    = p?.name ?? l?.name ?? k;
+  const atype   = p?.type ?? l?.type ?? 'crypto';
+  const hasPos  = state?.positions?.[k];
+
+  const priceStr = price != null
+    ? (price < 1 ? fmt(price, 6) : price < 100 ? fmt(price, 4) : fmt(price, 2))
+    : '—';
+
+  const hlStr = (high && low)
+    ? `H: ${high < 100 ? fmtN(high,2) : fmtN(high,0)}€ L: ${low < 100 ? fmtN(low,2) : fmtN(low,0)}€`
+    : '';
+
+  return `<div class="asset-card type-${atype} ${selectedAsset===k?'active':''}" onclick="selectAsset('${k}')">
+    <div class="ac-top">
+      <div class="ac-left">
+        <div class="ac-ticker">${k}${hasPos?'<span class="pos-dot"></span>':''} ${typeBadge(atype)}</div>
+        <div class="ac-name">${name}</div>
+      </div>
+      <div class="ac-right">
+        <div class="ac-price">${priceStr}</div>
+        <div class="ac-chg ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div>
+      </div>
+    </div>
+    <div class="ac-mid">
+      <div class="ac-hl">${hlStr}</div>
+      <span class="signal-badge ${sigClass(sig)}">${sigLabel(sig)}</span>
+    </div>
+    <div class="score-bar"><div class="score-fill" style="width:${score}%;background:${scoreColor(score)}"></div></div>
+    <div class="ac-footer">
+      <span class="ac-score" style="color:${scoreColor(score)}">${score}/100</span>
+      <span class="ac-rsi">RSI ${typeof rsi === 'number' ? `<span style="color:${rsiColor(rsi)}">${rsi}</span>` : rsi}</span>
+    </div>
+  </div>`;
 }
 
-function signalClass(s) {
-  return s==='BUY'?'signal-buy':s==='SELL'?'signal-sell':'signal-hold';
+// ─── DETAIL PANEL ─────────────────────────────────────────────────
+function selectAsset(k) {
+  selectedAsset = k;
+  // Re-render all cards to update active state
+  renderAllCards();
+
+  const l   = history.slice().reverse().find(h => h.asset === k);
+  const p   = state?.last_prices?.[k];
+  const pos = state?.positions?.[k];
+  if (!l && !p) { document.getElementById('detailSection').style.display = 'none'; return; }
+
+  document.getElementById('detailSection').style.display = 'block';
+  const name  = p?.name ?? l?.name ?? k;
+  const atype = p?.type ?? l?.type ?? 'crypto';
+  const priceEur = p?.price_eur ?? l?.price_eur ?? 0;
+  const chg   = p?.change_24h ?? l?.change_24h ?? 0;
+  const high  = p?.high_24h ?? l?.high_24h ?? 0;
+  const low   = p?.low_24h  ?? l?.low_24h  ?? 0;
+  const vol   = p?.volume_usd ?? l?.volume_usd ?? 0;
+  const rsi   = p?.rsi ?? l?.rsi ?? '—';
+  const score = l?.score ?? 50;
+  const source = p?.source ?? l?.source ?? '';
+  const sl    = priceEur * 0.93;
+  const tp    = priceEur * 1.18;
+
+  document.getElementById('detailTitle').textContent = `${name} (${k}) — Analyse détaillée`;
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-panel">
+      <div class="dp-header">
+        <div>
+          <div class="dp-title">${name} <span class="muted">${k}</span> ${typeBadge(atype)}</div>
+          <div class="dp-subtitle" style="margin-top:5px">${tendBadge(l?.tendance||'NEUTRE')} &nbsp; <span class="source-tag">${source}</span></div>
+        </div>
+        <div class="dp-signal">
+          <div style="font-size:20px;font-weight:bold;color:${scoreColor(score)}">${score}<span style="font-size:12px;color:var(--muted)">/100</span></div>
+          <div style="margin-top:4px"><span class="signal-badge ${sigClass(l?.signal||'HOLD')}" style="font-size:11px;padding:3px 12px">${sigLabel(l?.signal||'HOLD')}</span></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">Confiance ${l?.confiance||50}%</div>
+        </div>
+      </div>
+
+      <div class="dp-grid-wide">
+        <div class="dp-item"><div class="dp-label">Prix actuel</div><div class="dp-val ${priceEur>0?'':'muted'}">${priceEur < 100 ? fmt(priceEur,4) : fmt(priceEur,2)}</div></div>
+        <div class="dp-item"><div class="dp-label">Variation 24h</div><div class="dp-val ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
+        <div class="dp-item"><div class="dp-label">High 24h</div><div class="dp-val sm">${high < 100 ? fmt(high,4) : fmt(high,2)}</div></div>
+        <div class="dp-item"><div class="dp-label">Low 24h</div><div class="dp-val sm">${low < 100 ? fmt(low,4) : fmt(low,2)}</div></div>
+        <div class="dp-item"><div class="dp-label">Volume 24h</div><div class="dp-val sm">${vol > 1e9 ? (vol/1e9).toFixed(1)+'B$' : vol > 1e6 ? (vol/1e6).toFixed(1)+'M$' : fmtN(vol,0)+'$'}</div></div>
+      </div>
+
+      <div class="dp-grid">
+        <div class="dp-item"><div class="dp-label">RSI</div><div class="dp-val" style="color:${typeof rsi==='number'?rsiColor(rsi):'var(--muted)'}">${rsi} <span style="font-size:10px;color:var(--muted)">${l?.rsi_analyse||''}</span></div></div>
+        <div class="dp-item"><div class="dp-label">Support estimé</div><div class="dp-val sm green">${l?.support ? fmt(l.support,4) : '—'}</div></div>
+        <div class="dp-item"><div class="dp-label">Résistance estimée</div><div class="dp-val sm red">${l?.resistance ? fmt(l.resistance,4) : '—'}</div></div>
+        <div class="dp-item"><div class="dp-label">Stop-loss (-7%)</div><div class="dp-val sm red">${fmt(sl,2)}</div></div>
+      </div>
+
+      <div class="dp-item" style="margin-bottom:10px"><div class="dp-label">Take-profit (+18%)</div><div class="dp-val green">${fmt(tp,2)}</div></div>
+
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Scores par composante</div>
+      <div class="scores-grid">
+        ${[['Technique',l?.score_technique],['Sentiment',l?.score_sentiment],['Macro',l?.score_macro],['Momentum',l?.score_momentum],['Volume',l?.score_volume]].map(([lbl,v])=>`
+          <div class="score-item">
+            <div class="score-label">${lbl}</div>
+            <div class="score-val" style="color:${scoreColor(v??50)}">${v??'—'}</div>
+            <div class="score-mini-bar"><div class="score-mini-fill" style="width:${v??50}%;background:${scoreColor(v??50)}"></div></div>
+          </div>`).join('')}
+      </div>
+
+      <div class="analysis-row">
+        <div class="analysis-box"><div class="abox-title">📊 Analyse IA</div>${l?.raison||'Analyse non disponible'}</div>
+        <div class="analysis-box risk"><div class="abox-title">⚠ Risque principal</div>${l?.risque||'Non identifié'}</div>
+        <div class="analysis-box opp"><div class="abox-title">💡 Opportunité</div>${l?.opportunite||'Non identifiée'}</div>
+      </div>
+
+      ${pos ? `<div class="dp-item" style="margin-top:10px;border-color:var(--purple)">
+        <div class="dp-label purple">Position ouverte — ${fmt(pos.amount_eur,2)}</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px">
+          <span>Entrée : <strong>${fmt(pos.entry_price_eur,2)}</strong></span>
+          <span class="${priceEur > pos.entry_price_eur ? 'green' : 'red'}">PnL : ${(((priceEur - pos.entry_price_eur) / pos.entry_price_eur)*100).toFixed(2)}%</span>
+          <span class="muted">Ouvert : ${new Date(pos.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+        </div>
+      </div>` : ''}
+    </div>`;
 }
 
-function scoreColor(v) {
-  return v>=70?'#4caf7d':v>=50?'#e8a838':'#e05c5c';
+// ─── RENDER CARDS ─────────────────────────────────────────────────
+function renderAllCards() {
+  if (!state) return;
+  const prices = state.last_prices || {};
+  const lastByAsset = {};
+  history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
+  const all    = [...new Set([...Object.keys(prices), ...Object.keys(lastByAsset)])];
+  const cryptos = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'crypto');
+  const stocks  = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'stock');
+  const etfs    = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'etf');
+
+  const renderSet = (ids, container) => {
+    const el = document.getElementById(container);
+    if (el) el.innerHTML = ids.map(assetCardHTML).join('');
+  };
+
+  renderSet(all,    'allAssets');
+  renderSet(cryptos,'cryptoCards');
+  renderSet(stocks, 'stockCards');
+  renderSet(etfs,   'etfCards');
+
+  // KPI signaux achat
+  const buySignals = all.filter(k => history.slice().reverse().find(h => h.asset === k)?.signal === 'BUY');
+  document.getElementById('kpiBuy').textContent = buySignals.length;
+  document.getElementById('kpiAssets').textContent = all.length;
 }
 
-function actionBadge(a) {
-  const map = {BUY:'action-buy',SELL:'action-sell',HOLD:'action-hold',STOP_LOSS:'action-stop',TAKE_PROFIT:'action-tp'};
-  const lbl = {BUY:'ACHAT',SELL:'VENTE',HOLD:'ATTENTE',STOP_LOSS:'STOP-LOSS',TAKE_PROFIT:'TAKE-PROFIT'};
-  return `<span class="action-badge ${map[a]||'action-hold'}">${lbl[a]||a}</span>`;
+// ─── RENDER HISTORY ───────────────────────────────────────────────
+function renderHistory() {
+  const fType   = document.getElementById('filterType')?.value || '';
+  const fAction = document.getElementById('filterAction')?.value || '';
+  const fAsset  = document.getElementById('filterAsset')?.value || '';
+
+  // Populate asset filter
+  const sel = document.getElementById('filterAsset');
+  if (sel && sel.children.length <= 1) {
+    const assets = [...new Set(history.map(h => h.asset))].sort();
+    assets.forEach(a => {
+      const o = document.createElement('option');
+      o.value = a; o.textContent = a;
+      sel.appendChild(o);
+    });
+  }
+
+  let rows = history.slice().reverse();
+  if (fType)   rows = rows.filter(h => h.type === fType);
+  if (fAction) rows = rows.filter(h => h.action === fAction);
+  if (fAsset)  rows = rows.filter(h => h.asset === fAsset);
+  rows = rows.slice(0, 200);
+
+  document.getElementById('historyBody').innerHTML = rows.length === 0
+    ? '<tr><td colspan="11" class="empty">Aucun résultat</td></tr>'
+    : rows.map(h => {
+        const d = new Date(h.timestamp);
+        const priceStr = h.price_eur < 1 ? fmt(h.price_eur,6) : h.price_eur < 100 ? fmt(h.price_eur,4) : fmt(h.price_eur,2);
+        return `<tr>
+          <td class="muted" style="white-space:nowrap">${d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+          <td><strong>${h.asset}</strong><br><span class="muted" style="font-size:9px">${h.name||''}</span></td>
+          <td>${typeBadge(h.type||'crypto')}</td>
+          <td>${priceStr}</td>
+          <td class="${h.change_24h>=0?'green':'red'}">${h.change_24h>=0?'+':''}${h.change_24h?.toFixed(2)||0}%</td>
+          <td style="color:${typeof h.rsi==='number'?rsiColor(h.rsi):'var(--muted)'}">${typeof h.rsi==='number'?h.rsi:h.rsi||'—'}</td>
+          <td style="color:${scoreColor(h.score)}">${h.score}</td>
+          <td><span class="signal-badge ${sigClass(h.signal)}">${sigLabel(h.signal)}</span></td>
+          <td>${actBadge(h.action)}</td>
+          <td>${tendBadge(h.tendance||'NEUTRE')}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${h.raison||''}">${h.raison||'—'}</td>
+        </tr>`;
+      }).join('');
 }
 
+// ─── RENDER POSITIONS ─────────────────────────────────────────────
+function renderPositions() {
+  if (!state) return;
+  const pos = state.positions || {};
+  const prices = state.last_prices || {};
+  const keys = Object.keys(pos);
+
+  if (keys.length === 0) {
+    document.getElementById('posCard').innerHTML = '<div class="empty">Aucune position ouverte</div>';
+  } else {
+    document.getElementById('posCard').innerHTML = `<div class="table-wrap"><table class="pos-table">
+      <thead><tr><th>Actif</th><th>Type</th><th>Entrée</th><th>Montant</th><th>Prix actuel</th><th>PnL %</th><th>PnL €</th><th>Stop-Loss</th><th>Take-Profit</th><th>Ouvert le</th></tr></thead>
+      <tbody>${keys.map(k => {
+        const p = pos[k];
+        const cur = prices[k]?.price_eur || p.entry_price_eur;
+        const pnl_pct = ((cur - p.entry_price_eur) / p.entry_price_eur) * 100;
+        const pnl_eur = (cur - p.entry_price_eur) / p.entry_price_eur * p.amount_eur;
+        return `<tr>
+          <td><strong>${k}</strong></td>
+          <td>${typeBadge(prices[k]?.type||'crypto')}</td>
+          <td>${fmt(p.entry_price_eur,2)}</td>
+          <td>${fmt(p.amount_eur,2)}</td>
+          <td>${fmt(cur,2)}</td>
+          <td class="${pnl_pct>=0?'green':'red'}">${pnl_pct>=0?'+':''}${pnl_pct.toFixed(2)}%</td>
+          <td class="${pnl_eur>=0?'green':'red'}">${pnl_eur>=0?'+':''}${fmt(pnl_eur,2)}</td>
+          <td class="red">${fmt(p.entry_price_eur*0.93,2)}</td>
+          <td class="green">${fmt(p.entry_price_eur*1.18,2)}</td>
+          <td class="muted">${new Date(p.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+  }
+
+  // PnL stats
+  const trades = history.filter(h => h.action !== 'HOLD');
+  const wins   = trades.filter(h => h.action === 'TAKE_PROFIT').length;
+  const loss   = trades.filter(h => h.action === 'STOP_LOSS').length;
+  const stops  = loss;
+  const tps    = wins;
+  const invested = keys.reduce((s, k) => s + (pos[k]?.amount_eur || 0), 0);
+  document.getElementById('pnlTotal').innerHTML = `<span class="${(state.total_pnl_eur||0)>=0?'green':'red'}">${fmt(state.total_pnl_eur||0)}</span>`;
+  document.getElementById('pnlWins').textContent = wins;
+  document.getElementById('pnlLoss').textContent = loss;
+  document.getElementById('pnlStop').textContent = stops;
+  document.getElementById('pnlTp').textContent   = tps;
+  document.getElementById('pnlInvested').textContent = fmt(invested);
+}
+
+// ─── RENDER GLOBAL ────────────────────────────────────────────────
 function render() {
   if (!state) return;
-
-  // KPIs
   const pnl = state.total_pnl_eur || 0;
   document.getElementById('kpiPnl').innerHTML = `<span class="${pnl>=0?'green':'red'}">${fmt(pnl)}</span>`;
-  document.getElementById('kpiPositions').textContent = Object.keys(state.positions||{}).length;
+  document.getElementById('kpiPos').textContent = Object.keys(state.positions||{}).length;
   document.getElementById('kpiRate').textContent = state.eur_rate ? (1/state.eur_rate).toFixed(4) : '—';
   document.getElementById('fxPill').textContent = state.eur_rate ? `1 USD = ${state.eur_rate.toFixed(4)} €` : 'EUR/USD: —';
-  document.getElementById('modePill').innerHTML = state.dry_run !== false
-    ? '<span class="mode-badge">⚠ Mode simulation</span>'
-    : '<span class="mode-badge" style="border-color:#4caf7d;color:#4caf7d;background:rgba(76,175,125,0.1);">✓ Trading réel</span>';
 
   const trades = history.filter(h => h.action !== 'HOLD');
-  document.getElementById('kpiTrades').textContent = trades.length;
+  document.getElementById('kpiOrders').textContent = trades.length;
+
+  document.getElementById('modePill').innerHTML = state.dry_run !== false
+    ? '<span class="mode-warning">⚠ SIMULATION</span>'
+    : '<span style="color:var(--green);font-size:10px">✓ TRADING RÉEL</span>';
 
   if (state.last_run) {
     const d = new Date(state.last_run);
-    document.getElementById('kpiLast').textContent = d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    document.getElementById('lastRunPill').textContent = 'Run: ' + d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   }
 
-  // Actifs — dernière analyse de chaque actif
-  const lastByAsset = {};
-  history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
+  renderAllCards();
 
-  const prices = state.last_prices || {};
-  const assetKeys = Object.keys({...prices,...lastByAsset});
-  const uniqueAssets = [...new Set(assetKeys)];
-
-  document.getElementById('assetCards').innerHTML = uniqueAssets.map(k => {
-    const p = prices[k];
-    const l = lastByAsset[k];
-    const price = p ? fmt(p.price_eur) : '—';
-    const chg   = p ? p.change_24h : (l ? l.change_24h : 0);
-    const score = l ? l.score : 50;
-    const sig   = l ? l.signal : 'HOLD';
-    const name  = l ? l.name : k;
-    const hasPos = state.positions && state.positions[k];
-    return `<div class="asset-card ${selectedAsset===k?'active':''}" onclick="selectAsset('${k}')">
-      <div class="asset-top">
-        <div><div class="asset-name">${k} ${hasPos?'<span style="color:var(--purple);font-size:10px;">●</span>':''}</div><div class="asset-sym">${name}</div></div>
-        <div class="asset-price"><div class="price">${price}</div><div class="chg ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span class="signal-badge ${signalClass(sig)}">${sig==='BUY'?'ACHAT':sig==='SELL'?'VENTE':'ATTENTE'}</span>
-        <span style="font-size:11px;color:${scoreColor(score)};">${score}/100</span>
-      </div>
-      <div class="score-bar"><div class="score-fill" style="width:${score}%;background:${scoreColor(score)};"></div></div>
-    </div>`;
-  }).join('');
-
-  // Positions ouvertes
-  const pos = state.positions || {};
-  const posKeys = Object.keys(pos);
-  if (posKeys.length === 0) {
-    document.getElementById('positionsCard').innerHTML = '<div class="empty">Aucune position ouverte</div>';
-  } else {
-    document.getElementById('positionsCard').innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr><th style="padding:6px 10px;color:var(--muted);text-align:left;">Actif</th><th>Prix d'entrée</th><th>Montant</th><th>Stop-loss</th><th>Take-profit</th><th>Ouvert le</th></tr></thead>
-      <tbody>${posKeys.map(k => {
-        const p = pos[k];
-        return `<tr>
-          <td style="padding:8px 10px;font-weight:bold;">${k}</td>
-          <td style="padding:8px 10px;">${fmt(p.entry_price_eur)}</td>
-          <td style="padding:8px 10px;">${fmt(p.amount_eur)}</td>
-          <td style="padding:8px 10px;color:var(--red);">${fmt(p.entry_price_eur*0.93)}</td>
-          <td style="padding:8px 10px;color:var(--green);">${fmt(p.entry_price_eur*1.18)}</td>
-          <td style="padding:8px 10px;color:var(--muted);">${new Date(p.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
-  }
-
-  // Historique
-  const reversed = history.slice().reverse().slice(0, 100);
-  document.getElementById('historyBody').innerHTML = reversed.length === 0
-    ? '<tr><td colspan="8" class="empty">Aucun historique disponible</td></tr>'
-    : reversed.map(h => {
-        const d = new Date(h.timestamp);
-        return `<tr>
-          <td style="color:var(--muted);white-space:nowrap;">${d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
-          <td><strong>${h.asset}</strong></td>
-          <td>${fmt(h.price_eur)}</td>
-          <td class="${h.change_24h>=0?'green':'red'}">${h.change_24h>=0?'+':''}${h.change_24h.toFixed(2)}%</td>
-          <td style="color:${scoreColor(h.score)};">${h.score}</td>
-          <td><span class="signal-badge ${signalClass(h.signal)}">${h.signal==='BUY'?'ACHAT':h.signal==='SELL'?'VENTE':'ATTENTE'}</span></td>
-          <td>${actionBadge(h.action)}</td>
-          <td style="color:var(--muted);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${h.raison||''}">${h.raison||'—'}</td>
-        </tr>`;
-      }).join('');
-
-  // Rafraîchir le détail si un actif est sélectionné
   if (selectedAsset) selectAsset(selectedAsset);
+  if (document.getElementById('page-history').classList.contains('active')) renderHistory();
+  if (document.getElementById('page-positions').classList.contains('active')) renderPositions();
 }
 
-function selectAsset(k) {
-  selectedAsset = k;
-  document.querySelectorAll('.asset-card').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('.asset-card').forEach(c => {
-    if (c.onclick.toString().includes(`'${k}'`)) c.classList.add('active');
-  });
-
-  const last = history.slice().reverse().find(h => h.asset === k);
-  const price = state?.last_prices?.[k];
-  const pos   = state?.positions?.[k];
-
-  if (!last && !price) { document.getElementById('detailPanel').style.display='none'; return; }
-  document.getElementById('detailPanel').style.display = 'block';
-  document.getElementById('detailTitle').textContent = `Détail — ${last?.name||k} (${k})`;
-
-  const priceEur = price?.price_eur || last?.price_eur || 0;
-  const chg      = price?.change_24h || last?.change_24h || 0;
-  const score    = last?.score || 50;
-  const sl       = priceEur * 0.93;
-  const tp       = priceEur * 1.18;
-
-  document.getElementById('detailGrid').innerHTML = `
-    <div class="detail-item"><div class="detail-label">Prix actuel</div><div class="detail-val">${fmt(priceEur)}</div></div>
-    <div class="detail-item"><div class="detail-label">Variation 24h</div><div class="detail-val ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
-    <div class="detail-item"><div class="detail-label">Score global</div><div class="detail-val" style="color:${scoreColor(score)};">${score}/100</div></div>
-    <div class="detail-item"><div class="detail-label">Stop-loss (-7%)</div><div class="detail-val red">${fmt(sl)}</div></div>
-    <div class="detail-item"><div class="detail-label">Take-profit (+18%)</div><div class="detail-val green">${fmt(tp)}</div></div>
-    <div class="detail-item"><div class="detail-label">Signal IA</div><div class="detail-val"><span class="signal-badge ${signalClass(last?.signal||'HOLD')}">${last?.signal==='BUY'?'ACHAT':last?.signal==='SELL'?'VENTE':'ATTENTE'}</span></div></div>
-    ${pos?`<div class="detail-item" style="border:1px solid var(--purple);"><div class="detail-label purple">Position ouverte</div><div class="detail-val purple">${fmt(pos.amount_eur)}</div></div>`:''}
-  `;
-
-  document.getElementById('detailAnalysis').innerHTML = `
-    ${last?.raison ? `<div class="analysis-box">${last.raison}</div>` : ''}
-    ${last?.risque ? `<div class="risk-box">⚠ Risque principal : ${last.risque}</div>` : ''}
-  `;
-}
-
-// ─── DÉMARRAGE ─────────────────────────────────────────────────────
+// ─── DÉMARRAGE ────────────────────────────────────────────────────
 loadData();
 setInterval(loadData, REFRESH_MS);
 </script>
-
 </body>
 </html>
