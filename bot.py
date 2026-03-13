@@ -53,23 +53,23 @@ def get_eur_rate():
 # ─── PRIX BINANCE ─────────────────────────────────────────────────
 def get_binance_prices():
     prices = {}
-    try:
-        symbols = json.dumps(list(CRYPTO_ASSETS.values()))
-        r = requests.get(
-            f"https://api.binance.com/api/v3/ticker/24hr?symbols={symbols}",
-            timeout=10
-        )
-        for t in r.json():
-            key = next((k for k, v in CRYPTO_ASSETS.items() if v == t["symbol"]), None)
-            if key:
+    for key, symbol in CRYPTO_ASSETS.items():
+        try:
+            r = requests.get(
+                f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}",
+                timeout=10
+            )
+            t = r.json()
+            if "lastPrice" in t:
                 prices[key] = {
                     "price_usd": float(t["lastPrice"]),
                     "change_24h": float(t["priceChangePercent"]),
                     "volume": float(t["quoteVolume"]),
                     "source": "Binance LIVE"
                 }
-    except Exception as e:
-        print(f"[BINANCE] Erreur: {e}")
+                print(f"[BINANCE] {key} = {float(t['lastPrice']):.2f} USD ({float(t['priceChangePercent']):+.2f}%)")
+        except Exception as e:
+            print(f"[BINANCE] Erreur {key}: {e}")
     return prices
 
 # ─── PRIX ALPHA VANTAGE ───────────────────────────────────────────
