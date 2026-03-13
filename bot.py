@@ -1,36 +1,58 @@
 """
-NEXUS TRADING BOT — Agent IA autonome
+HAOUD TRADING IA — Agent IA autonome
 Fonctionne via GitHub Actions (cron toutes les 15 min)
+Sources : Binance (crypto) + Yahoo Finance (actions/ETF) + Claude AI
 """
 
 import requests
 import json
 import os
+import time
 from datetime import datetime
 
 # ─── CONFIGURATION ───────────────────────────────────────────────
-AV_KEY        = os.environ.get("ALPHA_VANTAGE_KEY", "")
-CLAUDE_KEY    = os.environ.get("CLAUDE_API_KEY", "")
-BITPANDA_KEY  = os.environ.get("BITPANDA_API_KEY", "")
+CLAUDE_KEY   = os.environ.get("CLAUDE_API_KEY", "")
+BITPANDA_KEY = os.environ.get("BITPANDA_API_KEY", "")
 
-# Actifs à surveiller
+# Cryptos via Binance (gratuit, illimité)
 CRYPTO_ASSETS = {
-    "BTC": "BTCUSDT",
-    "ETH": "ETHUSDT",
-    "SOL": "SOLUSDT"
+    "BTC":  {"symbol": "BTCUSDT",  "name": "Bitcoin"},
+    "ETH":  {"symbol": "ETHUSDT",  "name": "Ethereum"},
+    "SOL":  {"symbol": "SOLUSDT",  "name": "Solana"},
+    "BNB":  {"symbol": "BNBUSDT",  "name": "BNB"},
+    "XRP":  {"symbol": "XRPUSDT",  "name": "XRP"},
+    "ADA":  {"symbol": "ADAUSDT",  "name": "Cardano"},
+    "AVAX": {"symbol": "AVAXUSDT", "name": "Avalanche"},
+    "LINK": {"symbol": "LINKUSDT", "name": "Chainlink"},
 }
+
+# Actions via Yahoo Finance (gratuit, sans clé)
 STOCK_ASSETS = {
-    "NVDA": "NVDA",
-    "AAPL": "AAPL"
+    "NVDA":  {"ticker": "NVDA",  "name": "NVIDIA"},
+    "AAPL":  {"ticker": "AAPL",  "name": "Apple"},
+    "MSFT":  {"ticker": "MSFT",  "name": "Microsoft"},
+    "GOOGL": {"ticker": "GOOGL", "name": "Alphabet"},
+    "TSLA":  {"ticker": "TSLA",  "name": "Tesla"},
+    "AMZN":  {"ticker": "AMZN",  "name": "Amazon"},
+    "META":  {"ticker": "META",  "name": "Meta"},
+}
+
+# ETFs via Yahoo Finance (gratuit, sans clé)
+ETF_ASSETS = {
+    "SPY":  {"ticker": "SPY",  "name": "S&P 500 ETF"},
+    "QQQ":  {"ticker": "QQQ",  "name": "Nasdaq 100 ETF"},
+    "GLD":  {"ticker": "GLD",  "name": "Gold ETF"},
+    "VTI":  {"ticker": "VTI",  "name": "Total Market ETF"},
+    "ARKK": {"ticker": "ARKK", "name": "ARK Innovation ETF"},
 }
 
 # Règles de trading
-MIN_SCORE_BUY    = 70    # Score minimum pour acheter
-MAX_SCORE_SELL   = 40    # Score maximum pour vendre
-STOP_LOSS_PCT    = 0.07  # -7%
-TAKE_PROFIT_PCT  = 0.18  # +18%
-MAX_TRADE_EUR    = 50    # Montant max par trade en euros
-DRY_RUN          = True  # True = simulation, False = vrais ordres
+MIN_SCORE_BUY   = 70
+MAX_SCORE_SELL  = 40
+STOP_LOSS_PCT   = 0.07
+TAKE_PROFIT_PCT = 0.18
+MAX_TRADE_EUR   = 50
+DRY_RUN         = True
 
 HISTORY_FILE = "docs/trade_history.json"
 STATE_FILE   = "docs/bot_state.json"
@@ -50,56 +72,114 @@ def get_eur_rate():
         except:
             return 0.923
 
-# ─── PRIX BINANCE ─────────────────────────────────────────────────
+# ─── RSI SIMPLIFIÉ ────────────────────────────────────────────────
+def compute_rsi(closes, period=5):
+    if len(closes) < period + 1:
+        return 50
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        delta = closes[i] - closes[i-1]
+        gains.append(max(delta, 0))
+        losses.append(max(-delta, 0))
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 1)
+
+# ─── PRIX BINANCE (crypto) ────────────────────────────────────────
 def get_binance_prices():
     prices = {}
-    for key, symbol in CRYPTO_ASSETS.items():
+    for key, info in CRYPTO_ASSETS.items():
         try:
             r = requests.get(
-                f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}",
+                f"https://api.binance.com/api/v3/ticker/24hr?symbol={info['symbol']}",
                 timeout=10
             )
             t = r.json()
             if "lastPrice" in t:
                 prices[key] = {
-                    "price_usd": float(t["lastPrice"]),
+                    "price_usd":  float(t["lastPrice"]),
                     "change_24h": float(t["priceChangePercent"]),
-                    "volume": float(t["quoteVolume"]),
-                    "source": "Binance LIVE"
+                    "volume_usd": float(t["quoteVolume"]),
+                    "high_24h":   float(t["highPrice"]),
+                    "low_24h":    float(t["lowPrice"]),
+                    "name":       info["name"],
+                    "type":       "crypto",
+                    "source":     "Binance LIVE"
                 }
-                print(f"[BINANCE] {key} = {float(t['lastPrice']):.2f} USD ({float(t['priceChangePercent']):+.2f}%)")
+                print(f"  [OK] {key} = {float(t['lastPrice']):.4f} USD ({float(t['priceChangePercent']):+.2f}%)")
         except Exception as e:
-            print(f"[BINANCE] Erreur {key}: {e}")
+            print(f"  [ERREUR] {key}: {e}")
+        time.sleep(0.1)
     return prices
 
-# ─── PRIX ALPHA VANTAGE ───────────────────────────────────────────
+# ─── PRIX YAHOO FINANCE (actions + ETFs) ─────────────────────────
+def get_yahoo_price(ticker, name, asset_type):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=10d",
+            headers=headers, timeout=10
+        )
+        data   = r.json()
+        result = data["chart"]["result"][0]
+        meta   = result["meta"]
+        price  = float(meta.get("regularMarketPrice", 0))
+        prev   = float(meta.get("chartPreviousClose", meta.get("previousClose", price)))
+        change = ((price - prev) / prev * 100) if prev else 0
+
+        closes = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
+        closes = [c for c in closes if c is not None]
+        rsi = compute_rsi(closes) if len(closes) >= 3 else 50
+
+        print(f"  [OK] {ticker} = {price:.2f} USD ({change:+.2f}%) RSI={rsi}")
+        return {
+            "price_usd":  price,
+            "change_24h": round(change, 2),
+            "volume_usd": int(meta.get("regularMarketVolume", 0)) * price,
+            "high_24h":   float(meta.get("regularMarketDayHigh", price)),
+            "low_24h":    float(meta.get("regularMarketDayLow", price)),
+            "rsi":        rsi,
+            "name":       name,
+            "type":       asset_type,
+            "source":     "Yahoo Finance LIVE"
+        }
+    except Exception as e:
+        print(f"  [ERREUR] {ticker}: {e}")
+        return None
+
 def get_stock_prices():
     prices = {}
-    for key, symbol in STOCK_ASSETS.items():
-        try:
-            r = requests.get(
-                f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={AV_KEY}",
-                timeout=10
-            )
-            q = r.json().get("Global Quote", {})
-            if q.get("05. price"):
-                prices[key] = {
-                    "price_usd": float(q["05. price"]),
-                    "change_24h": float(q["10. change percent"].replace("%", "")),
-                    "volume": int(q.get("06. volume", 0)),
-                    "source": "Alpha Vantage LIVE"
-                }
-        except Exception as e:
-            print(f"[AV] Erreur {key}: {e}")
+    for key, info in STOCK_ASSETS.items():
+        result = get_yahoo_price(info["ticker"], info["name"], "stock")
+        if result:
+            prices[key] = result
+        time.sleep(0.3)
+    return prices
+
+def get_etf_prices():
+    prices = {}
+    for key, info in ETF_ASSETS.items():
+        result = get_yahoo_price(info["ticker"], info["name"], "etf")
+        if result:
+            prices[key] = result
+        time.sleep(0.3)
     return prices
 
 # ─── ANALYSE CLAUDE AI ────────────────────────────────────────────
-def analyze_with_claude(asset, name, price_eur, change, eur_rate):
+def analyze_with_claude(asset, info):
+    type_label = {"crypto": "crypto-monnaie", "stock": "action", "etf": "ETF"}.get(info.get("type",""), "actif")
+    rsi_val = info.get("rsi", "N/A")
     try:
         prompt = f"""Tu es un analyste financier IA expert en trading algorithmique.
-Analyse {name} ({asset}) :
-- Prix actuel : {price_eur:.2f}€ (taux 1 USD = {eur_rate:.4f}€)
-- Variation 24h : {change:+.2f}%
+Analyse cette {type_label} : {info['name']} ({asset})
+- Prix : {info['price_usd']:.4f} USD
+- Variation 24h : {info['change_24h']:+.2f}%
+- High 24h : {info.get('high_24h', 0):.4f} | Low 24h : {info.get('low_24h', 0):.4f}
+- Volume 24h : {info.get('volume_usd', 0):,.0f} USD
+- RSI : {rsi_val}
 - Date : {datetime.now().strftime('%d/%m/%Y %H:%M')} UTC
 
 Réponds UNIQUEMENT en JSON valide sans markdown :
@@ -108,10 +188,16 @@ Réponds UNIQUEMENT en JSON valide sans markdown :
   "score_sentiment": <0-100>,
   "score_macro": <0-100>,
   "score_momentum": <0-100>,
+  "score_volume": <0-100>,
   "signal": "<BUY|SELL|HOLD>",
   "confiance": <0-100>,
-  "raison": "<explication courte en français, max 2 phrases>",
-  "risque_principal": "<risque principal en français, max 1 phrase>"
+  "tendance": "<HAUSSIERE|BAISSIERE|NEUTRE>",
+  "support": <prix support en USD, nombre>,
+  "resistance": <prix résistance en USD, nombre>,
+  "rsi_analyse": "<suracheté|survendu|neutre>",
+  "raison": "<analyse en français, max 3 phrases>",
+  "risque_principal": "<risque en français, 1 phrase>",
+  "opportunite": "<opportunité en français, 1 phrase>"
 }}"""
 
         r = requests.post(
@@ -123,7 +209,7 @@ Réponds UNIQUEMENT en JSON valide sans markdown :
             },
             json={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 500,
+                "max_tokens": 600,
                 "messages": [{"role": "user", "content": prompt}]
             },
             timeout=30
@@ -132,12 +218,16 @@ Réponds UNIQUEMENT en JSON valide sans markdown :
         text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        print(f"[CLAUDE] Erreur analyse {asset}: {e}")
+        print(f"  [CLAUDE ERREUR] {asset}: {e}")
         return {
             "score_technique": 50, "score_sentiment": 50,
-            "score_macro": 50, "score_momentum": 50,
+            "score_macro": 50, "score_momentum": 50, "score_volume": 50,
             "signal": "HOLD", "confiance": 50,
-            "raison": "Analyse indisponible.", "risque_principal": "Données insuffisantes."
+            "tendance": "NEUTRE", "support": 0, "resistance": 0,
+            "rsi_analyse": "neutre",
+            "raison": "Analyse indisponible.",
+            "risque_principal": "Données insuffisantes.",
+            "opportunite": "Données insuffisantes."
         }
 
 # ─── CALCUL SCORE GLOBAL ─────────────────────────────────────────
@@ -146,59 +236,37 @@ def compute_global_score(analysis):
         "score_technique": 0.25,
         "score_sentiment": 0.20,
         "score_macro":     0.20,
-        "score_momentum":  0.15,
+        "score_momentum":  0.20,
+        "score_volume":    0.15,
     }
-    score = sum(analysis.get(k, 50) * w for k, w in weights.items())
-    # Bonus RSI selon variation
-    return round(min(100, max(0, score)))
+    return round(min(100, max(0, sum(analysis.get(k, 50) * w for k, w in weights.items()))))
 
 # ─── EXÉCUTION ORDRE BITPANDA ────────────────────────────────────
 def place_order_bitpanda(asset, side, amount_eur):
     if DRY_RUN:
-        print(f"[DRY RUN] {side} {asset} pour {amount_eur}€ — ordre simulé")
-        return {"status": "simulated", "side": side, "amount_eur": amount_eur}
-
+        print(f"  [DRY RUN] {side} {asset} pour {amount_eur}€")
+        return {"status": "simulated"}
     try:
-        # Récupérer l'instrument ID Bitpanda pour l'actif
-        r = requests.get(
-            "https://api.exchange.bitpanda.com/public/v1/instruments",
-            timeout=10
-        )
-        instruments = r.json()
+        r = requests.get("https://api.exchange.bitpanda.com/public/v1/instruments", timeout=10)
         instrument_id = None
-        for inst in instruments:
+        for inst in r.json():
             if inst.get("base", {}).get("code") == asset and inst.get("quote", {}).get("code") == "EUR":
                 instrument_id = inst["instrument_code"]
                 break
-
         if not instrument_id:
-            print(f"[BITPANDA] Instrument {asset}/EUR introuvable")
             return None
-
-        # Passer l'ordre
-        order = {
-            "instrument_code": instrument_id,
-            "type": "MARKET",
-            "side": side,
-            "amount": str(amount_eur)
-        }
         r = requests.post(
             "https://api.exchange.bitpanda.com/public/v1/account/orders",
-            headers={
-                "Authorization": f"Bearer {BITPANDA_KEY}",
-                "Content-Type": "application/json"
-            },
-            json=order,
+            headers={"Authorization": f"Bearer {BITPANDA_KEY}", "Content-Type": "application/json"},
+            json={"instrument_code": instrument_id, "type": "MARKET", "side": side, "amount": str(amount_eur)},
             timeout=15
         )
-        result = r.json()
-        print(f"[BITPANDA] Ordre {side} {asset} : {result}")
-        return result
+        return r.json()
     except Exception as e:
-        print(f"[BITPANDA] Erreur ordre: {e}")
+        print(f"  [BITPANDA ERREUR] {e}")
         return None
 
-# ─── CHARGEMENT / SAUVEGARDE ÉTAT ────────────────────────────────
+# ─── CHARGEMENT / SAUVEGARDE ─────────────────────────────────────
 def load_json(path, default):
     try:
         with open(path, "r") as f:
@@ -213,112 +281,133 @@ def save_json(path, data):
 
 # ─── BOT PRINCIPAL ───────────────────────────────────────────────
 def run_bot():
-    print(f"\n{'='*50}")
-    print(f"NEXUS TRADING BOT — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} UTC")
-    print(f"{'='*50}\n")
+    print(f"\n{'='*55}")
+    print(f"  HAOUD TRADING IA — {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} UTC")
+    print(f"{'='*55}\n")
 
     eur_rate = get_eur_rate()
-    print(f"[FX] 1 USD = {eur_rate:.4f} EUR")
+    print(f"[FX] 1 USD = {eur_rate:.4f} EUR\n")
 
-    # Récupérer tous les prix
+    print("[CRYPTO] Binance...")
     all_prices = {}
     all_prices.update(get_binance_prices())
+
+    print("\n[ACTIONS] Yahoo Finance...")
     all_prices.update(get_stock_prices())
+
+    print("\n[ETFs] Yahoo Finance...")
+    all_prices.update(get_etf_prices())
 
     history   = load_json(HISTORY_FILE, [])
     bot_state = load_json(STATE_FILE, {"positions": {}, "last_run": None, "total_pnl_eur": 0})
 
+    print(f"\n[ANALYSE IA] {len(all_prices)} actifs...\n")
     results = []
 
     for asset, price_data in all_prices.items():
         price_usd = price_data["price_usd"]
         price_eur = price_usd * eur_rate
         change    = price_data["change_24h"]
-        name      = {"BTC":"Bitcoin","ETH":"Ethereum","SOL":"Solana","NVDA":"NVIDIA","AAPL":"Apple"}.get(asset, asset)
+        name      = price_data.get("name", asset)
+        atype     = price_data.get("type", "crypto")
 
-        print(f"\n[{asset}] {name} — {price_eur:.2f}€ ({change:+.2f}%)")
+        print(f"[{asset}] {name} — {price_eur:.4f}€ ({change:+.2f}%)")
 
-        # Analyse IA
-        analysis     = analyze_with_claude(asset, name, price_eur, change, eur_rate)
+        analysis     = analyze_with_claude(asset, price_data)
         global_score = compute_global_score(analysis)
         signal       = analysis.get("signal", "HOLD")
-        confiance    = analysis.get("confiance", 50)
 
-        print(f"  Score global : {global_score}/100 | Signal : {signal} | Confiance : {confiance}%")
-        print(f"  Raison : {analysis.get('raison', 'N/A')}")
+        print(f"  → Score: {global_score} | {signal} | {analysis.get('tendance','?')}")
 
         action_taken = None
         position     = bot_state["positions"].get(asset)
 
-        # ── Vérifier stop-loss / take-profit sur position ouverte ──
         if position:
             entry_price = position["entry_price_eur"]
             pnl_pct     = (price_eur - entry_price) / entry_price
-
             if pnl_pct <= -STOP_LOSS_PCT:
-                print(f"  STOP-LOSS déclenché ! PnL: {pnl_pct*100:.1f}%")
-                result = place_order_bitpanda(asset, "SELL", position["amount_eur"])
-                pnl_eur = (price_eur - entry_price) / entry_price * position["amount_eur"]
-                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+                place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
                 del bot_state["positions"][asset]
                 action_taken = "STOP_LOSS"
-
+                print(f"  ⚠ STOP-LOSS déclenché ({pnl_pct*100:.1f}%)")
             elif pnl_pct >= TAKE_PROFIT_PCT:
-                print(f"  TAKE-PROFIT déclenché ! PnL: {pnl_pct*100:.1f}%")
-                result = place_order_bitpanda(asset, "SELL", position["amount_eur"])
-                pnl_eur = pnl_pct * position["amount_eur"]
-                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+                place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_pct * position["amount_eur"], 2)
                 del bot_state["positions"][asset]
                 action_taken = "TAKE_PROFIT"
-
-        # ── Signal d'achat ──
+                print(f"  ✓ TAKE-PROFIT déclenché ({pnl_pct*100:.1f}%)")
         elif signal == "BUY" and global_score >= MIN_SCORE_BUY and not position:
-            print(f"  SIGNAL ACHAT — score {global_score} >= {MIN_SCORE_BUY}")
-            result = place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
-            bot_state["positions"][asset] = {
-                "entry_price_eur": price_eur,
-                "amount_eur": MAX_TRADE_EUR,
-                "entry_date": datetime.now().isoformat()
-            }
+            place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
+            bot_state["positions"][asset] = {"entry_price_eur": price_eur, "amount_eur": MAX_TRADE_EUR, "entry_date": datetime.now().isoformat()}
             action_taken = "BUY"
-
-        # ── Signal de vente sans position ──
+            print(f"  ✓ ACHAT")
         elif signal == "SELL" and global_score <= MAX_SCORE_SELL and position:
-            print(f"  SIGNAL VENTE — score {global_score} <= {MAX_SCORE_SELL}")
-            result = place_order_bitpanda(asset, "SELL", position["amount_eur"])
+            place_order_bitpanda(asset, "SELL", position["amount_eur"])
             del bot_state["positions"][asset]
             action_taken = "SELL"
+            print(f"  ✓ VENTE")
 
-        # ── Enregistrer dans l'historique ──
         entry = {
-            "timestamp":    datetime.now().isoformat(),
-            "asset":        asset,
-            "name":         name,
-            "price_eur":    round(price_eur, 2),
-            "change_24h":   round(change, 2),
-            "score":        global_score,
-            "signal":       signal,
-            "confiance":    confiance,
-            "action":       action_taken or "HOLD",
-            "raison":       analysis.get("raison", ""),
-            "risque":       analysis.get("risque_principal", ""),
-            "dry_run":      DRY_RUN
+            "timestamp":       datetime.now().isoformat(),
+            "asset":           asset,
+            "name":            name,
+            "type":            atype,
+            "price_eur":       round(price_eur, 6),
+            "price_usd":       round(price_usd, 6),
+            "change_24h":      round(change, 2),
+            "high_24h":        round(price_data.get("high_24h", 0) * eur_rate, 6),
+            "low_24h":         round(price_data.get("low_24h", 0) * eur_rate, 6),
+            "volume_usd":      round(price_data.get("volume_usd", 0), 0),
+            "rsi":             price_data.get("rsi", 50),
+            "score":           global_score,
+            "score_technique": analysis.get("score_technique", 50),
+            "score_sentiment": analysis.get("score_sentiment", 50),
+            "score_macro":     analysis.get("score_macro", 50),
+            "score_momentum":  analysis.get("score_momentum", 50),
+            "score_volume":    analysis.get("score_volume", 50),
+            "signal":          signal,
+            "confiance":       analysis.get("confiance", 50),
+            "tendance":        analysis.get("tendance", "NEUTRE"),
+            "support":         round(analysis.get("support", 0) * eur_rate, 4),
+            "resistance":      round(analysis.get("resistance", 0) * eur_rate, 4),
+            "rsi_analyse":     analysis.get("rsi_analyse", "neutre"),
+            "action":          action_taken or "HOLD",
+            "raison":          analysis.get("raison", ""),
+            "risque":          analysis.get("risque_principal", ""),
+            "opportunite":     analysis.get("opportunite", ""),
+            "source":          price_data.get("source", ""),
+            "dry_run":         DRY_RUN
         }
         history.append(entry)
         results.append(entry)
 
-    # Garder les 500 dernières entrées
-    history = history[-500:]
-
-    bot_state["last_run"]   = datetime.now().isoformat()
-    bot_state["eur_rate"]   = eur_rate
-    bot_state["last_prices"] = {k: {"price_eur": round(v["price_usd"]*eur_rate,2), "change_24h": round(v["change_24h"],2)} for k,v in all_prices.items()}
+    history = history[-1000:]
+    bot_state["last_run"]    = datetime.now().isoformat()
+    bot_state["eur_rate"]    = eur_rate
+    bot_state["dry_run"]     = DRY_RUN
+    bot_state["last_prices"] = {
+        k: {
+            "price_eur":  round(v["price_usd"] * eur_rate, 6),
+            "price_usd":  round(v["price_usd"], 6),
+            "change_24h": round(v["change_24h"], 2),
+            "high_24h":   round(v.get("high_24h", 0) * eur_rate, 6),
+            "low_24h":    round(v.get("low_24h", 0) * eur_rate, 6),
+            "volume_usd": round(v.get("volume_usd", 0), 0),
+            "rsi":        v.get("rsi", 50),
+            "name":       v.get("name", k),
+            "type":       v.get("type", "crypto"),
+            "source":     v.get("source", "")
+        } for k, v in all_prices.items()
+    }
 
     save_json(HISTORY_FILE, history)
     save_json(STATE_FILE, bot_state)
 
-    print(f"\n[DONE] {len(results)} actifs analysés | PnL total : {bot_state['total_pnl_eur']:.2f}€")
-    print(f"[DONE] Fichiers mis à jour : {HISTORY_FILE}, {STATE_FILE}")
+    actions = [e for e in results if e["action"] != "HOLD"]
+    print(f"\n{'='*55}")
+    print(f"  DONE — {len(results)} actifs | {len(actions)} ordres | PnL: {bot_state['total_pnl_eur']:.2f}€")
+    print(f"{'='*55}\n")
 
 if __name__ == "__main__":
     run_bot()
