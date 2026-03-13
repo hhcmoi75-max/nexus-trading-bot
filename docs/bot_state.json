@@ -4,9 +4,14 @@
       "entry_price_eur": 156.489167415,
       "amount_eur": 50,
       "entry_date": "2026-03-13T20:34:56.501665"
+    },
+    "MSFT": {
+      "entry_price_eur": 343.407989853,
+      "amount_eur": 50,
+      "entry_date": "2026-03-13T21:03:18.082920"
     }
   },
-  "last_run": "2026-03-13T20:36:04.980019",
+  "last_run": "2026-03-13T21:04:14.740302",
   "total_pnl_eur": 0,
   "eur_rate": 0.86817846,
   "last_prices": {
@@ -52,7 +57,7 @@
       "change_24h": -3.04,
       "high_24h": 267.064717,
       "low_24h": 260.835537,
-      "volume_usd": 7107119094.0,
+      "volume_usd": 7145915523.0,
       "rsi": 61.3,
       "name": "Alphabet",
       "type": "stock",
@@ -124,7 +129,7 @@
       "change_24h": -4.74,
       "high_24h": 408.13243,
       "low_24h": 399.553091,
-      "volume_usd": 5322445312.0,
+      "volume_usd": 5394765394.0,
       "rsi": 22.8,
       "name": "Gold ETF",
       "type": "etf",
@@ -148,7 +153,7 @@
       "change_24h": -3.65,
       "high_24h": 62.639076,
       "low_24h": 60.703038,
-      "volume_usd": 930926375.0,
+      "volume_usd": 931045238.0,
       "rsi": 32.9,
       "name": "ARK Innovation ETF",
       "type": "etf",
