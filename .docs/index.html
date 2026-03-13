@@ -275,7 +275,7 @@ tr:hover td{background:var(--bg3)}
 </div><!-- /main -->
 
 <script>
-// ─── CONFIG ── REMPLACE TON_PSEUDO PAR TON PSEUDO GITHUB ──────────
+// ─── CONFIG ── REMPLACE hhcmoi75-max PAR TON PSEUDO GITHUB ──────────
 const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
 const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
 const REFRESH_MS  = 60000;
@@ -331,7 +331,32 @@ const actBadge = a => {
 function assetCardHTML(k) {
   const p = state?.last_prices?.[k];
   const l = history.slice().reverse().find(h => h.asset === k);
-  if (!p && !l) return '';
+  // Carte placeholder si aucune donnée encore disponible
+  if (!p && !l) {
+    const atype = getType(k);
+    const names = {
+      BTC:"Bitcoin",ETH:"Ethereum",SOL:"Solana",BNB:"BNB",XRP:"XRP",
+      ADA:"Cardano",AVAX:"Avalanche",LINK:"Chainlink",DOT:"Polkadot",MATIC:"Polygon",
+      NVDA:"NVIDIA",AAPL:"Apple",MSFT:"Microsoft",GOOGL:"Alphabet",TSLA:"Tesla",AMZN:"Amazon",META:"Meta",
+      SPY:"S&P 500 ETF",QQQ:"Nasdaq 100 ETF",GLD:"Gold ETF",VTI:"Total Market ETF",ARKK:"ARK Innovation",
+      CW8:"Amundi MSCI World",SP5:"Amundi S&P 500",C40:"Amundi CAC 40",PANX:"Amundi Nasdaq-100",AEME:"Amundi MSCI Emerging"
+    };
+    return `<div class="asset-card type-${atype}" style="opacity:0.45">
+      <div class="ac-top">
+        <div class="ac-left">
+          <div class="ac-ticker">${k} ${typeBadge(atype)}</div>
+          <div class="ac-name">${names[k]||k}</div>
+        </div>
+        <div class="ac-right">
+          <div class="ac-price muted">—</div>
+          <div class="ac-chg muted">—</div>
+        </div>
+      </div>
+      <div class="ac-mid"><div class="ac-hl muted">En attente du bot...</div></div>
+      <div class="score-bar"><div class="score-fill" style="width:50%;background:var(--border)"></div></div>
+      <div class="ac-footer"><span class="ac-score muted">—/100</span><span class="ac-rsi muted">RSI —</span></div>
+    </div>`;
+  }
 
   const price   = p?.price_eur;
   const chg     = p?.change_24h ?? l?.change_24h ?? 0;
