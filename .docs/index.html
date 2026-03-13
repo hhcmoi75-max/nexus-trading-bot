@@ -276,8 +276,8 @@ tr:hover td{background:var(--bg3)}
 
 <script>
 // ─── CONFIG ── REMPLACE TON_PSEUDO PAR TON PSEUDO GITHUB ──────────
-const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
-const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
+const STATE_URL   = 'https://raw.githubusercontent.com/TON_PSEUDO/nexus-trading-bot/main/docs/bot_state.json';
+const HISTORY_URL = 'https://raw.githubusercontent.com/TON_PSEUDO/nexus-trading-bot/main/docs/trade_history.json';
 const REFRESH_MS  = 60000;
 
 let state = null, history = [], selectedAsset = null;
@@ -459,6 +459,23 @@ function selectAsset(k) {
     </div>`;
 }
 
+// Listes de secours pour typage des actifs
+const KNOWN_CRYPTO = new Set(["BTC","ETH","SOL","BNB","XRP","ADA","AVAX","LINK","DOT","MATIC"]);
+const KNOWN_STOCK  = new Set(["NVDA","AAPL","MSFT","GOOGL","TSLA","AMZN","META","NFLX","AMD","INTC"]);
+const KNOWN_ETF = new Set(["SPY","QQQ","GLD","VTI","ARKK","IWM","DIA","XLK","TLT","CW8","SP5","C40","PANX","AEME"]);
+
+function getType(k) {
+  const p = state?.last_prices || {};
+  const lb = {};
+  history.slice().reverse().forEach(h => { if (!lb[h.asset]) lb[h.asset] = h; });
+  const t = p[k]?.type || lb[k]?.type;
+  if (t) return t;
+  if (KNOWN_CRYPTO.has(k)) return "crypto";
+  if (KNOWN_STOCK.has(k))  return "stock";
+  if (KNOWN_ETF.has(k))    return "etf";
+  return "crypto";
+}
+
 // ─── RENDER CARDS ─────────────────────────────────────────────────
 function renderAllCards() {
   if (!state) return;
@@ -466,9 +483,9 @@ function renderAllCards() {
   const lastByAsset = {};
   history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
   const all    = [...new Set([...Object.keys(prices), ...Object.keys(lastByAsset)])];
-  const cryptos = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'crypto');
-  const stocks  = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'stock');
-  const etfs    = all.filter(k => (prices[k]?.type || lastByAsset[k]?.type) === 'etf');
+  const cryptos = all.filter(k => getType(k) === 'crypto');
+  const stocks  = all.filter(k => getType(k) === 'stock');
+  const etfs    = all.filter(k => getType(k) === 'etf');
 
   const renderSet = (ids, container) => {
     const el = document.getElementById(container);
