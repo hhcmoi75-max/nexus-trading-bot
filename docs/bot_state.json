@@ -11,7 +11,7 @@
       "entry_date": "2026-03-13T21:03:18.082920"
     }
   },
-  "last_run": "2026-03-13T21:04:14.740302",
+  "last_run": "2026-03-13T21:26:15.604950",
   "total_pnl_eur": 0,
   "eur_rate": 0.86817846,
   "last_prices": {
@@ -107,7 +107,7 @@
       "low_24h": 574.178506,
       "volume_usd": 55018754938.0,
       "rsi": 26.9,
-      "name": "S&P 500 ETF",
+      "name": "S&P 500 ETF (US)",
       "type": "etf",
       "source": "Yahoo Finance LIVE"
     },
@@ -156,6 +156,66 @@
       "volume_usd": 931045238.0,
       "rsi": 32.9,
       "name": "ARK Innovation ETF",
+      "type": "etf",
+      "source": "Yahoo Finance LIVE"
+    },
+    "CW8": {
+      "price_eur": 529.187762,
+      "price_usd": 609.538,
+      "change_24h": -1.7,
+      "high_24h": 533.56425,
+      "low_24h": 527.157961,
+      "volume_usd": 4659918.0,
+      "rsi": 48.6,
+      "name": "Amundi MSCI World",
+      "type": "etf",
+      "source": "Yahoo Finance LIVE"
+    },
+    "SP5": {
+      "price_eur": 51.844145,
+      "price_usd": 59.716,
+      "change_24h": -0.79,
+      "high_24h": 52.075949,
+      "low_24h": 51.737359,
+      "volume_usd": 914551.0,
+      "rsi": 50,
+      "name": "Amundi S&P 500",
+      "type": "etf",
+      "source": "Yahoo Finance LIVE"
+    },
+    "C40": {
+      "price_eur": 117.759726,
+      "price_usd": 135.64,
+      "change_24h": -6.24,
+      "high_24h": 119.426629,
+      "low_24h": 117.429818,
+      "volume_usd": 448697.0,
+      "rsi": 34.4,
+      "name": "Amundi CAC 40",
+      "type": "etf",
+      "source": "Yahoo Finance LIVE"
+    },
+    "PANX": {
+      "price_eur": 56.369959,
+      "price_usd": 64.929,
+      "change_24h": 0.64,
+      "high_24h": 57.120934,
+      "low_24h": 56.254491,
+      "volume_usd": 297440.0,
+      "rsi": 51.1,
+      "name": "Amundi Nasdaq-100",
+      "type": "etf",
+      "source": "Yahoo Finance LIVE"
+    },
+    "AEME": {
+      "price_eur": 74.971551,
+      "price_usd": 86.355,
+      "change_24h": -5.19,
+      "high_24h": 75.897029,
+      "low_24h": 74.51923,
+      "volume_usd": 2516471.0,
+      "rsi": 52.2,
+      "name": "Amundi MSCI Emerging",
       "type": "etf",
       "source": "Yahoo Finance LIVE"
     }
