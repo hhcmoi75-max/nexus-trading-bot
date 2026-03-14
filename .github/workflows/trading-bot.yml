@@ -2,14 +2,16 @@ name: NEXUS Trading Bot
 
 on:
   schedule:
+    # Toutes les 15 minutes (minimum GitHub Actions)
     - cron: '*/15 * * * *'
   workflow_dispatch:
+    # Permet aussi de lancer manuellement depuis GitHub
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # Pour pouvoir commiter les fichiers JSON
 
     steps:
       - name: Checkout du repo
@@ -39,7 +41,7 @@ jobs:
         run: |
           git config --local user.email "bot@nexus-trading.ai"
           git config --local user.name "HAOUD Bot"
-          git add docs/trade_history.json docs/bot_state.json
+          git add docs/trade_history.json docs/bot_state.json docs/macro_cache.json
           git diff --staged --quiet || git commit -m "🤖 Bot update — $(date '+%d/%m/%Y %H:%M') UTC"
           git pull --rebase origin main
           git push
