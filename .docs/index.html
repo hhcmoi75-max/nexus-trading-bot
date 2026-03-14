@@ -47,6 +47,23 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .side-close-btn:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
 .side-asset-title{font-size:13px;font-weight:bold}
 
+/* BARRES D'APPRENTISSAGE */
+.learning-bars{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;gap:16px;flex-wrap:wrap}
+.lbar-wrap{flex:1;min-width:200px;max-width:500px}
+.lbar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.lbar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:5px}
+.lbar-label .lbar-icon{font-size:11px}
+.lbar-value{font-size:11px;font-weight:bold}
+.lbar-track{height:6px;background:var(--bg3);border-radius:4px;overflow:hidden;border:1px solid var(--border)}
+.lbar-fill{height:100%;border-radius:4px;transition:width 1.2s cubic-bezier(.4,0,.2,1)}
+.lbar-fill.ml{background:linear-gradient(90deg,var(--purple),var(--cyan))}
+.lbar-fill.wisdom{background:linear-gradient(90deg,var(--amber),var(--green))}
+.lbar-sub{font-size:9px;color:var(--muted2);margin-top:3px}
+.lbar-badge{display:inline-flex;align-items:center;gap:3px;font-size:9px;padding:1px 6px;border-radius:10px}
+.lbar-badge.active{background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.2)}
+.lbar-badge.pending{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(255,181,71,.2)}
+.lbar-badge.inactive{background:var(--bg3);color:var(--muted);border:1px solid var(--border)}
+
 /* SEARCH BAR */
 .search-wrap{padding:12px 20px 0;max-width:1400px;margin:0 auto}
 .search-box{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;transition:border-color .2s}
@@ -231,6 +248,28 @@ tr:hover td{background:var(--bg3)}
   <div class="tab" onclick="switchTab('whales',this)">🐋 Whales</div>
 </div>
 
+<!-- BARRES APPRENTISSAGE -->
+<div class="learning-bars" id="learningBars">
+  <!-- Barre 1 : Deep Learning ML -->
+  <div class="lbar-wrap">
+    <div class="lbar-header">
+      <span class="lbar-label"><span class="lbar-icon">🧠</span> Deep Learning ML</span>
+      <span class="lbar-value" id="mlBarValue">—</span>
+    </div>
+    <div class="lbar-track"><div class="lbar-fill ml" id="mlBarFill" style="width:0%"></div></div>
+    <div class="lbar-sub" id="mlBarSub">En attente des premiers trades...</div>
+  </div>
+  <!-- Barre 2 : Mémoire Sagesse -->
+  <div class="lbar-wrap">
+    <div class="lbar-header">
+      <span class="lbar-label"><span class="lbar-icon">📚</span> Mémoire Sagesse Compressée</span>
+      <span class="lbar-value" id="wisdomBarValue">—</span>
+    </div>
+    <div class="lbar-track"><div class="lbar-fill wisdom" id="wisdomBarFill" style="width:0%"></div></div>
+    <div class="lbar-sub" id="wisdomBarSub">Première distillation après 10 trades...</div>
+  </div>
+</div>
+
 <!-- SEARCH BAR -->
 <div class="search-wrap">
   <div class="search-wrap-inner">
@@ -361,9 +400,11 @@ tr:hover td{background:var(--bg3)}
 const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
 const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
 const WHALE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/whale_alerts.json';
+const LEARNING_URL= 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/learning.json';
+const WISDOM_URL  = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/wisdom.json';
 const REFRESH_MS  = 60000;
 
-let state = null, history = [], selectedAsset = null, whaleData = [];
+let state = null, history = [], selectedAsset = null, whaleData = [], learningData = {}, wisdomData = {};
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
 function switchTab(page, el) {
@@ -559,20 +600,119 @@ document.addEventListener('click', e => {
   }
 });
 
+// ─── BARRES APPRENTISSAGE ─────────────────────────────────────────
+function renderLearningBars() {
+
+  // === BARRE 1 : DEEP LEARNING ML ===
+  const stats       = learningData?.stats || {};
+  const totalClosed = stats.total_closed || 0;
+  const winRate     = stats.win_rate || 0;
+  const avgPnl      = stats.avg_pnl || 0;
+  const mlActive    = state?.learning?.ml_active || false;
+  const mlAccuracy  = state?.learning?.ml_accuracy;
+  const ML_MIN      = 20;  // trades minimum pour activer le ML
+
+  // Progression vers activation ML (0-100%)
+  const mlProgress  = Math.min(100, Math.round(totalClosed / ML_MIN * 100));
+  // Une fois actif, afficher la précision du modèle
+  const mlDisplay   = mlActive && mlAccuracy ? mlAccuracy : mlProgress;
+  const mlLabel     = mlActive
+    ? (mlAccuracy ? mlAccuracy.toFixed(1) + '% précision' : 'Actif')
+    : (mlProgress + '% — ' + totalClosed + '/' + ML_MIN + ' trades');
+
+  document.getElementById('mlBarFill').style.width  = mlDisplay + '%';
+  document.getElementById('mlBarValue').textContent = mlActive ? '✓ ACTIF' : mlProgress + '%';
+  document.getElementById('mlBarValue').style.color = mlActive ? 'var(--green)' : (mlProgress >= 75 ? 'var(--amber)' : 'var(--muted)');
+
+  let mlSub = '';
+  if (mlActive) {
+    mlSub = 'Modèle RandomForest actif · ' + totalClosed + ' trades · Win rate ' + winRate + '%';
+    if (mlAccuracy) mlSub += ' · Précision CV: ' + mlAccuracy + '%';
+  } else if (totalClosed === 0) {
+    mlSub = 'En attente des premiers trades clôturés...';
+  } else {
+    mlSub = totalClosed + '/' + ML_MIN + ' trades clôturés · Win rate: ' + winRate + '% · Moy PnL: ' + avgPnl + '%';
+  }
+
+  // Badge statut ML
+  const mlBadge = mlActive
+    ? '<span class="lbar-badge active">● Actif</span>'
+    : (totalClosed >= 10
+       ? '<span class="lbar-badge pending">⏳ Bientôt</span>'
+       : '<span class="lbar-badge inactive">○ Inactif</span>');
+
+  document.getElementById('mlBarSub').innerHTML = mlSub + '  ' + mlBadge;
+
+  // === BARRE 2 : MEMOIRE SAGESSE ===
+  const lecons        = wisdomData?.lecons_cles || [];
+  const actifsFav     = wisdomData?.actifs_a_privilegier || [];
+  const actifsEviter  = wisdomData?.actifs_a_eviter || [];
+  const lastDistil    = wisdomData?.last_distillation;
+  const tradesAnalyze = wisdomData?.trades_analyzed || 0;
+  const winAtDistil   = wisdomData?.win_rate_at_distill || 0;
+
+  // Calcul richesse memoire (0-100%) : base sur nb lecons + actifs + fraicheur
+  const richnessScore = Math.min(100, Math.round(
+    lecons.length * 12 +           // max 10 lecons = 120 (plafonne a 100)
+    actifsFav.length * 5 +         // actifs favoris
+    actifsEviter.length * 5 +      // actifs a eviter
+    (tradesAnalyze > 0 ? 10 : 0)   // bonus si deja distille
+  ));
+
+  // Fraicheur (jours depuis derniere distillation)
+  let fraicheur = '';
+  let wisdomBadge = '';
+  if (lastDistil) {
+    const daysAgo = Math.floor((Date.now() - new Date(lastDistil).getTime()) / 86400000);
+    fraicheur = daysAgo === 0 ? "Aujourd'hui" : (daysAgo === 1 ? 'Hier' : 'Il y a ' + daysAgo + 'j');
+    wisdomBadge = daysAgo <= 7
+      ? '<span class="lbar-badge active">● Récente</span>'
+      : '<span class="lbar-badge pending">⏳ Prochaine lundi</span>';
+  } else {
+    wisdomBadge = '<span class="lbar-badge inactive">○ Pas encore distillée</span>';
+  }
+
+  const wisdomLabel = lecons.length > 0
+    ? lecons.length + ' leçon' + (lecons.length > 1 ? 's' : '') + ' · ' + (actifsFav.length + actifsEviter.length) + ' actifs mémorisés'
+    : 'Première distillation chaque lundi après 10 trades';
+
+  document.getElementById('wisdomBarFill').style.width  = richnessScore + '%';
+  document.getElementById('wisdomBarValue').textContent = lecons.length > 0
+    ? lecons.length + ' leçon' + (lecons.length > 1 ? 's' : '')
+    : '0 leçon';
+  document.getElementById('wisdomBarValue').style.color = lecons.length >= 3
+    ? 'var(--green)' : (lecons.length >= 1 ? 'var(--amber)' : 'var(--muted)');
+
+  let wisdomSub = wisdomLabel;
+  if (fraicheur) wisdomSub += ' · Distillée: ' + fraicheur;
+  if (winAtDistil > 0) wisdomSub += ' · WR au moment: ' + winAtDistil + '%';
+
+  document.getElementById('wisdomBarSub').innerHTML = wisdomSub + '  ' + wisdomBadge;
+
+  // Tooltip lecons sur hover
+  if (lecons.length > 0) {
+    document.getElementById('wisdomBarFill').title = lecons.join(' | ');
+  }
+}
+
 // ─── CHARGEMENT ───────────────────────────────────────────────────
 async function loadData() {
   document.getElementById('statusDot').className = 'dot amber';
   document.getElementById('statusText').textContent = 'Mise à jour...';
   try {
-    const [sR, hR, wR] = await Promise.all([
-      fetch(STATE_URL   + '?t=' + Date.now()),
-      fetch(HISTORY_URL + '?t=' + Date.now()),
-      fetch(WHALE_URL   + '?t=' + Date.now())
+    const [sR, hR, wR, lR, wsR] = await Promise.all([
+      fetch(STATE_URL    + '?t=' + Date.now()),
+      fetch(HISTORY_URL  + '?t=' + Date.now()),
+      fetch(WHALE_URL    + '?t=' + Date.now()),
+      fetch(LEARNING_URL + '?t=' + Date.now()).catch(() => ({json:()=>({})})),
+      fetch(WISDOM_URL   + '?t=' + Date.now()).catch(() => ({json:()=>({})})),
     ]);
-    state     = await sR.json();
-    history   = await hR.json();
-    const wd  = await wR.json();
-    whaleData = wd.alerts || [];
+    state        = await sR.json();
+    history      = await hR.json();
+    const wd     = await wR.json();
+    whaleData    = wd.alerts || [];
+    learningData = await lR.json().catch(() => ({}));
+    wisdomData   = await wsR.json().catch(() => ({}));
     render();
     document.getElementById('statusDot').className = 'dot green';
     document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
@@ -963,6 +1103,7 @@ function render() {
     document.getElementById('lastRunPill').textContent = 'Run: ' + d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   }
 
+  renderLearningBars();
   renderAllCards();
   renderCryptoCards();
   renderStockCards();
