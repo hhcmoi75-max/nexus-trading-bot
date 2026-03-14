@@ -48,9 +48,10 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .side-asset-title{font-size:13px;font-weight:bold}
 
 /* BARRES D'APPRENTISSAGE */
-.learning-bars{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;gap:16px;flex-wrap:wrap}
-.lbar-wrap{flex:1;min-width:200px;max-width:500px}
-.lbar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.learning-bars{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.lbar-wrap{flex:1;min-width:240px;max-width:420px}
+.lbar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.lbar-divider{width:1px;background:var(--border);align-self:stretch;margin:0 4px}
 .lbar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:5px}
 .lbar-label .lbar-icon{font-size:11px}
 .lbar-value{font-size:11px;font-weight:bold}
@@ -65,7 +66,7 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .lbar-badge.inactive{background:var(--bg3);color:var(--muted);border:1px solid var(--border)}
 
 /* SEARCH BAR */
-.search-wrap{padding:12px 20px 0;max-width:1400px;margin:0 auto}
+.search-wrap{padding:12px 20px 8px;max-width:700px;margin:0 auto}
 .search-box{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;transition:border-color .2s}
 .search-box:focus-within{border-color:var(--purple)}
 .search-icon{color:var(--muted);font-size:14px;flex-shrink:0}
@@ -100,7 +101,7 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .btn:hover{background:var(--purple-bg);border-color:var(--purple);color:var(--purple)}
 
 /* TABS */
-.tabs{display:flex;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px}
+.tabs{display:flex;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;justify-content:center}
 .tab{padding:10px 18px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.06em;transition:all .2s}
 .tab.active{color:var(--purple);border-bottom-color:var(--purple)}
 .tab:hover:not(.active){color:var(--text)}
@@ -259,6 +260,7 @@ tr:hover td{background:var(--bg3)}
     <div class="lbar-track"><div class="lbar-fill ml" id="mlBarFill" style="width:0%"></div></div>
     <div class="lbar-sub" id="mlBarSub">En attente des premiers trades...</div>
   </div>
+  <div class="lbar-divider"></div>
   <!-- Barre 2 : Mémoire Sagesse -->
   <div class="lbar-wrap">
     <div class="lbar-header">
@@ -781,7 +783,9 @@ function assetCardHTML(k) {
   const high    = p?.high_24h;
   const low     = p?.low_24h;
   const rsi     = p?.rsi ?? l?.rsi ?? '—';
-  const score   = l?.score ?? 50;
+  // Ignorer les scores suspects (=100) qui viennent du bug precedent
+  const rawScore = l?.score ?? 50;
+  const score   = (rawScore >= 99 && !(p?.rsi) && l?.rsi === 50) ? 50 : rawScore;
   const sig     = l?.signal ?? 'HOLD';
   const name    = p?.name ?? l?.name ?? k;
   const atype   = p?.type ?? l?.type ?? 'crypto';
@@ -833,7 +837,8 @@ function buildDetailHTML(k) {
   const low      = p?.low_24h  ?? l?.low_24h  ?? 0;
   const vol      = p?.volume_usd ?? l?.volume_usd ?? 0;
   const rsi      = p?.rsi ?? l?.rsi ?? '—';
-  const score    = l?.score ?? 50;
+  const rawScore2 = l?.score ?? 50;
+  const score    = (rawScore2 >= 99 && l?.rsi === 50) ? 50 : rawScore2;
   const source   = p?.source ?? l?.source ?? '';
   const sl       = priceEur * 0.93;
   const tp       = priceEur * 1.18;
