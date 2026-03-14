@@ -976,13 +976,11 @@ def compute_final_score_v5(tech, macro_cache, asset, btc_status, onchain_data,
 
     # Score hybride avec poids adaptatifs (niveau 2)
     score = round(
-        st       * weights.get("technique", 0.55) * 100 +
+        st       * weights.get("technique", 0.55) +
         sm       * weights.get("macro", 0.20) +
         ss       * weights.get("sentiment", 0.15) +
         oc_score * weights.get("onchain", 0.10) +
         bonus_claude
-    ) if weights.get("technique", 0.55) < 1 else round(
-        st * 0.55 + sm * 0.20 + ss * 0.15 + oc_score * 0.10 + bonus_claude
     )
 
     # Bonus patterns par actif (niveau 3)
