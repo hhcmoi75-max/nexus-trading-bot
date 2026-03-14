@@ -1,1 +1,17 @@
-{}
+{
+  "score_macro": 45,
+  "score_sentiment": 35,
+  "tendance_marche": "BAISSIER",
+  "contexte": "Le marché crypto montre une faiblesse généralisée avec tous les actifs majeurs en territoire négatif, reflétant une aversion au risque dominante. La correction synchronisée suggère une pression vendeuse institutionnelle ou des prises de bénéfices coordonnées.",
+  "risque_principal": "Poursuite de la correction avec BTC testant le support des 60000 EUR, pouvant entraîner une cascade baissière sur les altcoins.",
+  "opportunite_du_jour": "Zone d'accumulation potentielle sur ETH proche des 1800 EUR si le support tient avec un RSI oversold.",
+  "actifs_favorables": [
+    "BTC",
+    "ETH"
+  ],
+  "actifs_risques": [
+    "ADA",
+    "AVAX"
+  ],
+  "last_claude_run": "2026-03-14T05:09:23.636018+00:00"
+}
