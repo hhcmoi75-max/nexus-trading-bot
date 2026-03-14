@@ -161,6 +161,56 @@ WISDOM_DAY_OF_WEEK  = 0   # Lundi = distillation hebdo
 # Nombre minimum de trades avant d'activer le ML
 ML_MIN_TRADES = 20
 
+# ============================================================
+# AMELIORATION 1 : TRAILING STOP + TAKE-PROFIT PAR PALIERS
+# ============================================================
+TRAILING_STOP_ENABLED  = True
+TRAILING_STOP_PCT      = 0.04    # Stop remonte si gain > 4% (garde 4% de gain mini)
+
+# Take-profit par paliers (vente partielle)
+TP_PALIERS = [
+    (0.08,  0.30),   # +8%  -> vendre 30% de la position
+    (0.15,  0.40),   # +15% -> vendre 40% supplementaires
+    (0.25,  1.00),   # +25% -> vendre le reste
+]
+
+# ============================================================
+# AMELIORATION 2 : HEURES DE TRADING OPTIMALES
+# ============================================================
+TRADING_HOURS_ENABLED = True
+# Plages horaires UTC ou le trading est autorise
+TRADING_WINDOWS = [
+    (7, 10),    # Ouverture Europe (7h-10h UTC)
+    (13, 17),   # Ouverture US + chevauchement (13h-17h UTC)
+    (19, 22),   # Session asiatique debut (19h-22h UTC)
+]
+# Exception : les cryptos tradent 24h/24 (toujours autorises)
+CRYPTO_24H = True
+
+# ============================================================
+# AMELIORATION 3 : CORRELATION INTER-ACTIFS
+# ============================================================
+# Secteurs pour diversification forcee
+SECTEURS = {
+    "crypto_major":   ["BTC", "ETH", "BNB"],
+    "crypto_alt":     ["SOL", "ADA", "AVAX", "LINK", "DOT", "MATIC"],
+    "crypto_meme":    ["DOGE", "SHIB"],
+    "tech_us":        ["NVDA", "AAPL", "MSFT", "GOOGL", "META", "AMD"],
+    "finance_us":     ["JPM", "GS", "V", "MA"],
+    "etf_us":         ["SPY", "QQQ", "VTI"],
+    "etf_or":         ["GLD"],
+    "europe":         ["MC.PA", "TTE.PA", "SAP.DE", "SIE.DE"],
+}
+MAX_PER_SECTEUR = 1   # Max 1 position par secteur
+
+# ============================================================
+# AMELIORATION 4 : REINVESTISSEMENT AUTOMATIQUE
+# ============================================================
+REINVEST_ENABLED    = True
+REINVEST_RATE       = 0.20   # 20% des gains reinvestis dans MAX_TRADE_EUR
+MAX_TRADE_HARD_CAP  = 200    # Plafond absolu par trade (securite)
+
+
 HISTORY_FILE   = "docs/trade_history.json"
 STATE_FILE     = "docs/bot_state.json"
 MACRO_FILE     = "docs/macro_cache.json"
@@ -174,6 +224,139 @@ MODEL_FILE     = "docs/ml_model.pkl"
 # ============================================================
 # UTILITAIRES
 # ============================================================
+
+# ============================================================
+# AMELIORATION 1 : TRAILING STOP + TP PALIERS
+# ============================================================
+
+def update_trailing_stop(position, price_eur):
+    """Met a jour le trailing stop si le prix monte"""
+    if not TRAILING_STOP_ENABLED:
+        return position
+    ep = position["entry_price_eur"]
+    pnl_pct = (price_eur - ep) / ep
+    # Activer le trailing seulement apres +4% de gain
+    if pnl_pct >= 0.04:
+        # Le stop ne peut que monter, jamais descendre
+        new_stop = price_eur * (1 - TRAILING_STOP_PCT)
+        current_stop = position.get("trailing_stop_eur", ep * (1 - 0.07))
+        if new_stop > current_stop:
+            position["trailing_stop_eur"] = round(new_stop, 4)
+            position["trailing_activated"] = True
+            print("  [TRAILING] " + str(round(new_stop, 2)) + "EUR (prix=" + str(round(price_eur,2)) + " gain=" + str(round(pnl_pct*100,1)) + "%)")
+    return position
+
+def check_tp_paliers(position, price_eur, asset, learning_data):
+    """
+    Verifie les paliers de take-profit et vend partiellement.
+    Retourne (action, montant_vendu, reste_position)
+    """
+    ep          = position["entry_price_eur"]
+    pnl_pct     = (price_eur - ep) / ep
+    total_amount = position["amount_eur"]
+    paliers_done = position.get("paliers_done", [])
+
+    for palier_pct, fraction in TP_PALIERS:
+        palier_key = str(palier_pct)
+        if pnl_pct >= palier_pct and palier_key not in paliers_done:
+            montant_vente = round(total_amount * fraction, 2)
+            if montant_vente < 1:
+                continue
+            place_order_bitpanda(asset, "SELL", montant_vente)
+            pnl_eur = pnl_pct * montant_vente
+            paliers_done.append(palier_key)
+            # Reduire la position
+            position["amount_eur"]    = round(total_amount - montant_vente, 2)
+            position["paliers_done"]  = paliers_done
+            position["amount_eur"]    = max(0, position["amount_eur"])
+            print("  [TP PALIER] +" + str(round(palier_pct*100)) + "% -> vente " + str(round(fraction*100)) + "% = " + str(montant_vente) + "EUR | PnL=" + str(round(pnl_eur,2)) + "EUR")
+            send_telegram("TP PALIER +" + str(round(palier_pct*100)) + "% - " + asset + "\nVendu: " + str(montant_vente) + "EUR | Gain: +" + str(round(pnl_eur,2)) + "EUR\nReste: " + str(position["amount_eur"]) + "EUR")
+            return "TP_PALIER_" + str(round(palier_pct*100)), pnl_eur, position
+
+    return None, 0, position
+
+# ============================================================
+# AMELIORATION 2 : FILTRE HEURES DE TRADING
+# ============================================================
+
+def is_trading_allowed(asset_type):
+    """Verifie si on est dans une fenetre de trading optimale"""
+    if not TRADING_HOURS_ENABLED:
+        return True
+    if asset_type == "crypto" and CRYPTO_24H:
+        return True   # Les cryptos tradent toujours
+    hour_utc = datetime.now(timezone.utc).hour
+    for start, end in TRADING_WINDOWS:
+        if start <= hour_utc < end:
+            return True
+    return False
+
+def get_momentum_exit_signal(tech):
+    """Detecte si le momentum indique une sortie imminente"""
+    rsi      = tech.get("rsi", 50)
+    macd     = tech.get("macd", 0)
+    macd_sig = tech.get("macd_signal", 0)
+    momentum = tech.get("momentum", 0)
+    # Signal de sortie : RSI suracheté + MACD qui croise à la baisse + momentum negatif
+    rsi_overbought = rsi >= 72
+    macd_bearish   = macd < macd_sig and macd > 0   # Croisement baissier depuis le haut
+    mom_fading     = momentum < -3
+    exit_signals   = sum([rsi_overbought, macd_bearish, mom_fading])
+    if exit_signals >= 2:
+        print("  [MOMENTUM EXIT] RSI=" + str(rsi) + " MACD cross=" + str(macd_bearish) + " Mom=" + str(momentum))
+        return True
+    return False
+
+# ============================================================
+# AMELIORATION 3 : CORRELATION INTER-ACTIFS
+# ============================================================
+
+def get_asset_secteur(asset):
+    for secteur, assets in SECTEURS.items():
+        if asset in assets:
+            return secteur
+    return "other"
+
+def is_secteur_full(asset, bot_state):
+    """Verifie si le secteur de l actif est deja maximalise"""
+    secteur = get_asset_secteur(asset)
+    if secteur == "other":
+        return False
+    positions = bot_state.get("positions", {})
+    same_secteur = [k for k in positions if get_asset_secteur(k) == secteur]
+    if len(same_secteur) >= MAX_PER_SECTEUR:
+        print("  [SECTEUR] " + secteur + " plein (" + str(same_secteur) + ") -> achat bloque")
+        return True
+    return False
+
+def get_diversification_bonus(asset, bot_state):
+    """Bonus si l actif diversifie le portefeuille"""
+    if not bot_state.get("positions"):
+        return 0
+    secteur = get_asset_secteur(asset)
+    positions_secteurs = [get_asset_secteur(k) for k in bot_state["positions"]]
+    # Bonus si secteur pas encore represente
+    if secteur not in positions_secteurs:
+        return 3   # +3pts pour la diversification
+    return 0
+
+# ============================================================
+# AMELIORATION 4 : REINVESTISSEMENT AUTOMATIQUE
+# ============================================================
+
+def compute_dynamic_trade_amount(bot_state):
+    """Calcule le montant du prochain trade selon les gains accumules"""
+    if not REINVEST_ENABLED:
+        return MAX_TRADE_EUR
+    total_pnl = bot_state.get("total_pnl_eur", 0)
+    if total_pnl <= 0:
+        return MAX_TRADE_EUR
+    # Augmenter le montant de 20% des gains cumules
+    bonus = total_pnl * REINVEST_RATE
+    new_amount = round(min(MAX_TRADE_EUR + bonus, MAX_TRADE_HARD_CAP), 2)
+    if new_amount > MAX_TRADE_EUR:
+        print("  [REINVEST] Montant trade augmente: " + str(MAX_TRADE_EUR) + " -> " + str(new_amount) + "EUR (PnL cumul=" + str(total_pnl) + "EUR)")
+    return new_amount
 
 def load_json(path, default):
     try:
@@ -1209,66 +1392,109 @@ def run_bot():
         action_taken = None
         position     = bot_state["positions"].get(asset)
 
+        # Amelioration 3 : bonus diversification
+        div_bonus = get_diversification_bonus(asset, bot_state)
+        if div_bonus:
+            score_final = min(100, score_final + div_bonus)
+
         if position:
-            ep = position["entry_price_eur"]
+            ep      = position["entry_price_eur"]
             pnl_pct = (price_eur - ep) / ep
-            if pnl_pct <= -sl_pct:
+
+            # Amelioration 1A : Trailing stop update
+            position = update_trailing_stop(position, price_eur)
+            bot_state["positions"][asset] = position
+
+            # Amelioration 1B : Take-profit par paliers
+            if not action_taken:
+                palier_action, palier_pnl, position = check_tp_paliers(position, price_eur, asset, learning_data)
+                if palier_action:
+                    bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + palier_pnl, 2)
+                    bot_state["positions"][asset] = position
+                    action_taken = palier_action
+                    if position.get("amount_eur", 0) <= 1:
+                        trade_rec = record_closed_trade(asset, position, price_eur, "TAKE_PROFIT", learning_data)
+                        learning_data["weights"]        = update_adaptive_weights(learning_data, trade_rec)
+                        learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
+                        del bot_state["positions"][asset]
+
+            # Stop loss (trailing ou fixe)
+            if not action_taken and asset in bot_state["positions"]:
+                trailing_stop = position.get("trailing_stop_eur", ep * (1 - sl_pct))
+                if price_eur <= trailing_stop:
+                    stop_label = "TRAILING_STOP" if position.get("trailing_activated") else "STOP_LOSS"
+                    place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                    pnl_eur = pnl_pct * position["amount_eur"]
+                    bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+                    trade_rec = record_closed_trade(asset, position, price_eur, stop_label, learning_data)
+                    learning_data["weights"]        = update_adaptive_weights(learning_data, trade_rec)
+                    learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
+                    del bot_state["positions"][asset]
+                    action_taken = stop_label
+                    send_telegram(stop_label+" "+asset+" PnL: "+str(round(pnl_pct*100,2))+"% ("+str(round(pnl_eur,2))+"EUR)")
+
+            # Take-profit classique
+            elif not action_taken and asset in bot_state["positions"] and pnl_pct >= tp_pct:
                 place_order_bitpanda(asset, "SELL", position["amount_eur"])
                 pnl_eur = pnl_pct * position["amount_eur"]
                 bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
-
-                # LEARNING : enregistrer trade cloture
-                trade_rec = record_closed_trade(asset, position, price_eur, "STOP_LOSS", learning_data)
-                learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
-                learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
-
-                del bot_state["positions"][asset]
-                action_taken = "STOP_LOSS"
-                send_telegram("STOP-LOSS "+asset+" PnL: "+str(round(pnl_pct*100,2))+"% ("+str(round(pnl_eur,2))+"EUR)\nWin rate bot: "+str(learning_data["stats"].get("win_rate",0))+"%")
-
-            elif pnl_pct >= tp_pct:
-                place_order_bitpanda(asset, "SELL", position["amount_eur"])
-                pnl_eur = pnl_pct * position["amount_eur"]
-                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
-
-                # LEARNING : enregistrer trade gagnant
                 trade_rec = record_closed_trade(asset, position, price_eur, "TAKE_PROFIT", learning_data)
-                learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
+                learning_data["weights"]        = update_adaptive_weights(learning_data, trade_rec)
                 learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
-
                 del bot_state["positions"][asset]
                 action_taken = "TAKE_PROFIT"
-                send_telegram("TAKE-PROFIT "+asset+" PnL: +"+str(round(pnl_pct*100,2))+"% (+"+str(round(pnl_eur,2))+"EUR)\nWin rate bot: "+str(learning_data["stats"].get("win_rate",0))+"%")
+                send_telegram("TAKE-PROFIT "+asset+" PnL: +"+str(round(pnl_pct*100,2))+"% (+"+str(round(pnl_eur,2))+"EUR)")
+
+            # Amelioration 2 : Sortie sur momentum (si gain > 3%)
+            elif not action_taken and asset in bot_state["positions"] and get_momentum_exit_signal(tech) and pnl_pct > 0.03:
+                place_order_bitpanda(asset, "SELL", position["amount_eur"])
+                pnl_eur = pnl_pct * position["amount_eur"]
+                bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+                trade_rec = record_closed_trade(asset, position, price_eur, "MOMENTUM_EXIT", learning_data)
+                learning_data["weights"]        = update_adaptive_weights(learning_data, trade_rec)
+                learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
+                del bot_state["positions"][asset]
+                action_taken = "MOMENTUM_EXIT"
+                send_telegram("SORTIE MOMENTUM "+asset+" +"+str(round(pnl_pct*100,2))+"% (+"+str(round(pnl_eur,2))+"EUR)")
 
         elif signal == "BUY" and score_final >= min_score and not position:
-            if can_open_position(asset, bot_state, asset_type):
-                place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
+            # Amelioration 2 : Filtre heures de trading
+            if not is_trading_allowed(asset_type):
+                print("  [HEURES] Bloque heure="+str(datetime.now(timezone.utc).hour)+"h UTC")
+            # Amelioration 3 : Filtre secteur
+            elif is_secteur_full(asset, bot_state):
+                pass
+            elif can_open_position(asset, bot_state, asset_type):
+                # Amelioration 4 : Montant dynamique
+                trade_amount = compute_dynamic_trade_amount(bot_state)
+                place_order_bitpanda(asset, "BUY", trade_amount)
                 position_record = {
-                    "entry_price_eur": price_eur,
-                    "amount_eur":      MAX_TRADE_EUR,
-                    "entry_date":      datetime.now().isoformat(),
-                    "rsi":             tech["rsi"],
-                    "score":           score_final,
-                    "change_24h":      change,
-                    "score_technique": tech["score_technique"],
-                    "score_macro":     macro_cache.get("score_macro", 50),
-                    "score_sentiment": macro_cache.get("score_sentiment", 50),
-                    "onchain_score":   onchain_data.get(asset, {}).get("score_onchain"),
+                    "entry_price_eur":    price_eur,
+                    "amount_eur":         trade_amount,
+                    "entry_date":         datetime.now().isoformat(),
+                    "rsi":                tech["rsi"],
+                    "score":              score_final,
+                    "change_24h":         change,
+                    "score_technique":    tech["score_technique"],
+                    "score_macro":        macro_cache.get("score_macro", 50),
+                    "score_sentiment":    macro_cache.get("score_sentiment", 50),
+                    "onchain_score":      onchain_data.get(asset, {}).get("score_onchain"),
+                    "trailing_stop_eur":  round(price_eur * (1 - sl_pct), 4),
+                    "trailing_activated": False,
+                    "paliers_done":       [],
+                    "secteur":            get_asset_secteur(asset),
                 }
                 bot_state["positions"][asset] = position_record
                 action_taken = "BUY"
                 ml_str = " | ML="+str(ml_confidence)+"%" if ml_confidence else ""
                 send_telegram(
-                    "ACHAT "+asset+" ("+name+")\n"
-                    "Prix: "+str(round(price_eur,2))+"EUR | Score: "+str(score_final)+"/100"+ml_str+"\n"
-                    "RSI: "+str(tech["rsi"])+" | BT win: "+str(bt.get("win_rate","N/A"))+"%\n"
-                    "SL: "+str(round(price_eur*(1-sl_pct),2))+" TP: "+str(round(price_eur*(1+tp_pct),2))
+                    "ACHAT "+asset+" ("+name+")\nPrix: "+str(round(price_eur,2))+"EUR | Score: "+str(score_final)+"/100"+ml_str+"\nSecteur: "+get_asset_secteur(asset)+" | Montant: "+str(trade_amount)+"EUR\nSL: "+str(round(price_eur*(1-sl_pct),2))+" | TP: +8%/+15%/+25%"
                 )
 
         elif signal == "SELL" and score_final <= max_score and position:
             place_order_bitpanda(asset, "SELL", position["amount_eur"])
             trade_rec = record_closed_trade(asset, position, price_eur, "SELL", learning_data)
-            learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
+            learning_data["weights"]        = update_adaptive_weights(learning_data, trade_rec)
             learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
             del bot_state["positions"][asset]
             action_taken = "SELL"
