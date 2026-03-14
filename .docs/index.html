@@ -908,15 +908,22 @@ function buildDetailHTML(k) {
 }
 
 function selectAsset(k) {
+  const panel = document.getElementById('sidePanel');
+
+  // 2eme clic sur le meme actif -> fermer le panneau
+  if (selectedAsset === k && panel.classList.contains('open')) {
+    closeSidePanel();
+    return;
+  }
+
   selectedAsset = k;
 
-  // Mettre a jour cartes actives sans re-render complet
+  // Mettre a jour cartes actives
   document.querySelectorAll('.asset-card').forEach(c => {
     c.classList.toggle('active', c.dataset.asset === k);
   });
 
   // Ouvrir panneau lateral
-  const panel = document.getElementById('sidePanel');
   const title = document.getElementById('sideTitle');
   const content = document.getElementById('sideContent');
   const l = history.slice().reverse().find(h => h.asset === k);
