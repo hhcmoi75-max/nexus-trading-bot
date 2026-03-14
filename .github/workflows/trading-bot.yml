@@ -1,17 +1,16 @@
-name: NEXUS Trading Bot
+name: HAOUD Trading Bot v5.0
 
 on:
   schedule:
-    # Toutes les 15 minutes (minimum GitHub Actions)
-    - cron: '*/15 * * * *'
+    # Toutes les 5 minutes (minimum GitHub Actions)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
-    # Permet aussi de lancer manuellement depuis GitHub
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Pour pouvoir commiter les fichiers JSON
+      contents: write
 
     steps:
       - name: Checkout du repo
@@ -27,21 +26,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Installation des dépendances
-        run: pip install requests
+      - name: Installation des dependances
+        run: pip install requests scikit-learn numpy
 
       - name: Lancement du bot de trading
         env:
-          ALPHA_VANTAGE_KEY: ${{ secrets.ALPHA_VANTAGE_KEY }}
           CLAUDE_API_KEY:    ${{ secrets.CLAUDE_API_KEY }}
           BITPANDA_API_KEY:  ${{ secrets.BITPANDA_API_KEY }}
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot.py
 
-      - name: Commit et push des résultats
+      - name: Commit et push des resultats
         run: |
-          git config --local user.email "bot@nexus-trading.ai"
-          git config --local user.name "HAOUD Bot"
-          git add docs/trade_history.json docs/bot_state.json docs/macro_cache.json docs/backtest.json docs/optimized_params.json docs/whale_alerts.json
-          git diff --staged --quiet || git commit -m "🤖 Bot update — $(date '+%d/%m/%Y %H:%M') UTC"
+          git config --local user.email "bot@haoud-trading.ai"
+          git config --local user.name "HAOUD Bot v5"
+          git add docs/trade_history.json docs/bot_state.json docs/macro_cache.json docs/backtest.json docs/optimized_params.json docs/whale_alerts.json docs/learning.json docs/wisdom.json docs/ml_model.pkl 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "🤖 v5 update — $(date '+%d/%m/%Y %H:%M') UTC"
           git pull --rebase origin main
           git push
