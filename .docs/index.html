@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HAOUD TRADING AI</title>
+<title>HAOUD TRADING IA</title>
 <style>
 :root {
   --bg:#0b0d12; --bg2:#13151d; --bg3:#1a1d27; --bg4:#21253200;
@@ -169,7 +169,7 @@ tr:hover td{background:var(--bg3)}
   <div class="logo">
     <div class="logo-icon">⚡</div>
     <div>
-      <div class="logo-text">HAOUD <span>TRADING BOT</span></div>
+      <div class="logo-text">HAOUD <span>TRADING IA</span></div>
       <div class="logo-sub">AGENT AUTONOME · ANALYSE IA · MULTI-ACTIFS</div>
     </div>
   </div>
@@ -191,6 +191,7 @@ tr:hover td{background:var(--bg3)}
   <div class="tab" onclick="switchTab('etfs',this)">🏦 ETFs</div>
   <div class="tab" onclick="switchTab('history',this)">📋 Historique</div>
   <div class="tab" onclick="switchTab('positions',this)">💼 Positions</div>
+  <div class="tab" onclick="switchTab('whales',this)">🐋 Whales</div>
 </div>
 
 <div class="main">
@@ -283,15 +284,25 @@ tr:hover td{background:var(--bg3)}
   </div>
 </div>
 
+<!-- PAGE WHALES -->
+<div id="page-whales" class="page">
+  <div class="sec-title">Mouvements Whales — Crypto + Actions</div>
+  <div class="card" style="margin-bottom:12px;padding:12px 16px;border-color:var(--amber);background:var(--amber-bg)">
+    <span style="color:var(--amber);font-size:11px">⚠ Ces alertes sont détectées automatiquement via Whale Alert (crypto) et SEC EDGAR / volumes anormaux (actions). Elles sont indicatives. Valide toujours manuellement sur Bitpanda avant d'agir.</span>
+  </div>
+  <div id="whaleCards" class="grid-cat"></div>
+</div>
+
 </div><!-- /main -->
 
 <script>
 // ─── CONFIG ── REMPLACE hhcmoi75-max PAR TON PSEUDO GITHUB ──────────
 const STATE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/bot_state.json';
 const HISTORY_URL = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/trade_history.json';
+const WHALE_URL   = 'https://raw.githubusercontent.com/hhcmoi75-max/nexus-trading-bot/main/docs/whale_alerts.json';
 const REFRESH_MS  = 60000;
 
-let state = null, history = [], selectedAsset = null;
+let state = null, history = [], selectedAsset = null, whaleData = [];
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
 function switchTab(page, el) {
@@ -305,6 +316,7 @@ function switchTab(page, el) {
   if (page === 'stocks')    renderStockCards();
   if (page === 'etfs')      renderEtfCards();
   if (page === 'dashboard') renderAllCards();
+  if (page === 'whales')    renderWhales();
 }
 
 // ─── THEME JOUR/NUIT ──────────────────────────────────────────────
@@ -325,17 +337,74 @@ function applyTheme() {
   }
 }
 
+// ─── WHALES ───────────────────────────────────────────────────────
+function renderWhales() {
+  const el = document.getElementById('whaleCards');
+  if (!el) return;
+  if (!whaleData || whaleData.length === 0) {
+    el.innerHTML = '<div class="empty" style="grid-column:1/-1">Aucune alerte whale detectee pour le moment</div>';
+    return;
+  }
+
+  // Trier : BUY en premier, puis par montant
+  const sorted = [...whaleData].sort((a,b) => {
+    if (a.direction === 'BUY' && b.direction !== 'BUY') return -1;
+    if (b.direction === 'BUY' && a.direction !== 'BUY') return 1;
+    return b.amount_usd - a.amount_usd;
+  });
+
+  el.innerHTML = sorted.map(w => {
+    const isBuy      = w.direction === 'BUY';
+    const isSell     = w.direction === 'SELL';
+    const color      = isBuy ? 'var(--green)' : isSell ? 'var(--red)' : 'var(--amber)';
+    const bgColor    = isBuy ? 'var(--green-bg)' : isSell ? 'var(--red-bg)' : 'var(--amber-bg)';
+    const borderCol  = isBuy ? 'rgba(61,220,132,.3)' : isSell ? 'rgba(255,92,106,.3)' : 'rgba(255,181,71,.3)';
+    const emoji      = isBuy ? '🐋📈' : isSell ? '🐋📉' : '🐋↔';
+    const dirLabel   = isBuy ? 'ACHAT WHALE' : isSell ? 'VENTE WHALE' : 'TRANSFERT';
+    const amount_m   = (w.amount_usd / 1e6).toFixed(1);
+    const priceStr   = w.current_price_eur != null ? fmt(w.current_price_eur, w.current_price_eur < 1 ? 4 : 2) : '—';
+    const chgStr     = w.change_24h != null ? `<span class="${w.change_24h>=0?'green':'red'}">${w.change_24h>=0?'+':''}${w.change_24h.toFixed(2)}%</span>` : '—';
+    const dateStr    = w.date ? new Date(w.date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const bitpanda_url = 'https://web.bitpanda.com/fusion';
+
+    return `<div class="card" style="border-color:${borderCol};border-left:3px solid ${color}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div>
+          <div style="font-size:14px;font-weight:bold">${emoji} ${w.asset} <span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${bgColor};color:${color};border:1px solid ${borderCol}">${dirLabel}</span></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">${w.name || w.asset}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:16px;font-weight:bold;color:${color}">$${amount_m}M</div>
+          <div style="font-size:9px;color:var(--muted)">${w.source || ''}</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5;border-left:2px solid var(--border);padding-left:8px">${w.title || ''}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin-bottom:10px">
+        <span>Prix : <strong>${priceStr}</strong></span>
+        <span>24h : ${chgStr}</span>
+        <span class="muted">Detecte : ${dateStr}</span>
+      </div>
+      ${isBuy ? `<a href="${bitpanda_url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:var(--green-bg);color:var(--green);border:1px solid rgba(61,220,132,.3);padding:6px 14px;border-radius:6px;font-size:11px;font-weight:bold;text-decoration:none;cursor:pointer">
+        ✓ Valider sur Bitpanda Fusion ↗
+      </a>` : `<span style="font-size:10px;color:var(--muted)">→ Surveiller uniquement</span>`}
+    </div>`;
+  }).join('');
+}
+
 // ─── CHARGEMENT ───────────────────────────────────────────────────
 async function loadData() {
   document.getElementById('statusDot').className = 'dot amber';
   document.getElementById('statusText').textContent = 'Mise à jour...';
   try {
-    const [sR, hR] = await Promise.all([
-      fetch(STATE_URL + '?t=' + Date.now()),
-      fetch(HISTORY_URL + '?t=' + Date.now())
+    const [sR, hR, wR] = await Promise.all([
+      fetch(STATE_URL   + '?t=' + Date.now()),
+      fetch(HISTORY_URL + '?t=' + Date.now()),
+      fetch(WHALE_URL   + '?t=' + Date.now())
     ]);
-    state   = await sR.json();
-    history = await hR.json();
+    state     = await sR.json();
+    history   = await hR.json();
+    const wd  = await wR.json();
+    whaleData = wd.alerts || [];
     render();
     document.getElementById('statusDot').className = 'dot green';
     document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
@@ -518,9 +587,9 @@ function selectAsset(k) {
 }
 
 // Listes de secours pour typage des actifs
-const KNOWN_CRYPTO = new Set(["BTC","ETH","SOL","BNB","XRP","ADA","AVAX","LINK","DOT","MATIC"]);
-const KNOWN_STOCK  = new Set(["NVDA","AAPL","MSFT","GOOGL","TSLA","AMZN","META"]);
-const KNOWN_ETF    = new Set(["SPY","QQQ","GLD","VTI","ARKK","CW8","SP5","C40","PANX","AEME"]);
+const KNOWN_CRYPTO = new Set(["BTC","ETH","BNB","SOL","XRP","ADA","AVAX","LINK","DOT","MATIC","DOGE","TRX","TON","SHIB","BCH","NEAR","LTC","UNI","ICP","ETC","APT","ATOM","XLM","FIL","ARB","OP","INJ","STETH"]);
+const KNOWN_STOCK = new Set(["AAPL","MSFT","NVDA","GOOGL","AMZN","META","TSLA","AVGO","AMD","INTC","CRM","ORCL","ADBE","QCOM","NOW","JPM","V","MA","GS","MS","BAC","LLY","UNH","JNJ","MRK","ABBV","PG","KO","PEP","WMT","COST","XOM","CVX","NFLX","DIS","UBER","ABNB","PYPL","SHOP","COIN","MSTR","BRK-B","AMGN","MC.PA","TTE.PA","SAN.PA","AIR.PA","BNP.PA","OR.PA","KER.PA","SU.PA","RI.PA","CAP.PA","STM.PA","DSY.PA","ACA.PA","GLE.PA","RMS.PA","SAP.DE","SIE.DE","ALV.DE","MBG.DE","BMW.DE","BAYN.DE","VOW3.DE","DTE.DE","DBK.DE","EOAN.DE"]);
+const KNOWN_ETF = new Set(["SPY","QQQ","GLD","VTI","ARKK","IWM","XLK","XLE","TLT","SLV","CW8","SP5","C40","PANX","AEME","LCEU","PAASI","EEM","EWJ","FXI"]);
 
 function getType(k) {
   const p = state?.last_prices || {};
@@ -706,6 +775,7 @@ function render() {
   renderCryptoCards();
   renderStockCards();
   renderEtfCards();
+  if (document.getElementById('page-whales').classList.contains('active')) renderWhales();
 
   if (selectedAsset) selectAsset(selectedAsset);
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
