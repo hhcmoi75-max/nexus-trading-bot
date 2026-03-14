@@ -2,16 +2,14 @@ name: NEXUS Trading Bot
 
 on:
   schedule:
-    # Toutes les 15 minutes (minimum GitHub Actions)
     - cron: '*/15 * * * *'
   workflow_dispatch:
-    # Permet aussi de lancer manuellement depuis GitHub
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Pour pouvoir commiter les fichiers JSON
+      contents: write
 
     steps:
       - name: Checkout du repo
