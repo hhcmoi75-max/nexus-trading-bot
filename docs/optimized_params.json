@@ -1,10 +1,10 @@
 {
-  "MIN_SCORE_BUY": 74,
+  "MIN_SCORE_BUY": 76,
   "MAX_SCORE_SELL": 40,
   "RSI_OVERSOLD": 35,
   "RSI_OVERBOUGHT": 65,
   "STOP_LOSS_PCT": 0.07,
   "TAKE_PROFIT_PCT": 0.18,
-  "last_update": "2026-03-14T21:01:50.622833",
+  "last_update": "2026-03-14T21:53:10.064476",
   "win_rate_recent": 23.1
 }
