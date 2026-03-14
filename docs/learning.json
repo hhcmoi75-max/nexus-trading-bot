@@ -7,12 +7,14 @@
     "onchain": 0.1
   },
   "thresholds": {
-    "MIN_SCORE_BUY": 70,
+    "MIN_SCORE_BUY": 72,
     "MAX_SCORE_SELL": 40,
     "RSI_OVERSOLD": 35,
     "RSI_OVERBOUGHT": 65,
     "STOP_LOSS_PCT": 0.07,
-    "TAKE_PROFIT_PCT": 0.18
+    "TAKE_PROFIT_PCT": 0.18,
+    "last_update": "2026-03-14T20:57:02.741022",
+    "win_rate_recent": 23.1
   },
   "asset_patterns": {},
   "trade_log": [
@@ -288,5 +290,5 @@
     "worst_trade": 0.0,
     "simulated": 13
   },
-  "last_update": "2026-03-14T19:52:48.749064"
+  "last_update": "2026-03-14T20:57:02.813639"
 }

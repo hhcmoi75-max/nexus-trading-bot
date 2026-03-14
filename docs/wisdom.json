@@ -1,1 +1,23 @@
-{"last_distillation":null,"lecons_cles":[],"actifs_a_privilegier":[],"actifs_a_eviter":[],"conditions_favorables":"","erreurs_recurrentes":"","strategie_recommandee":""}
+{
+  "lecons_cles": [
+    "Win rate de 23.1% est critique et indique un système de sélection défaillant",
+    "PnL moyen de 0.02% est insuffisant pour couvrir les frais de trading",
+    "Concentration excessive sur NVDA avec des résultats neutres révèle un problème de diversification"
+  ],
+  "actifs_a_privilegier": [
+    "ETH",
+    "BTC"
+  ],
+  "actifs_a_eviter": [
+    "NVDA",
+    "MSFT"
+  ],
+  "conditions_favorables": "Les crypto-monnaies montrent de meilleurs résultats que les actions traditionnelles dans cette période",
+  "erreurs_recurrentes": "Trop de trades neutres à 0.0% suggèrent des signaux d'entrée prématurés et une absence de momentum réel",
+  "recommandation_seuil_buy": 75,
+  "recommandation_stop_loss": 0.08,
+  "strategie_recommandee": "Réduire drastiquement la fréquence des trades en augmentant les critères de sélection pour privilégier la qualité sur la quantité. Se concentrer sur les crypto-monnaies qui montrent une meilleure réactivité aux signaux du bot.",
+  "last_distillation": "2026-03-14T20:56:16.096867+00:00",
+  "trades_analyzed": 13,
+  "win_rate_at_distill": 23.1
+}
