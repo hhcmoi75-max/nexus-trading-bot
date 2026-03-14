@@ -1,4 +1,4 @@
-# HAOUD TRADING IA - Agent IA autonome
+# HAOUD BITPANDA AI - Agent IA autonome
 # GitHub Actions cron toutes les 15 min
 # Sources : CoinGecko (crypto) + Yahoo Finance (actions/ETF) + Claude AI
 
