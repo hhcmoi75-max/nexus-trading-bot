@@ -48,8 +48,9 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .side-asset-title{font-size:13px;font-weight:bold}
 
 /* BARRES D'APPRENTISSAGE */
-.learning-bars{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
-.lbar-wrap{flex:1;min-width:240px;max-width:420px}
+.learning-bars{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 0;display:flex;justify-content:center}
+.lbars-inner{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:flex-start;max-width:900px;padding:0 20px}
+.lbar-wrap{width:400px;min-width:240px;max-width:420px}
 .lbar-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
 .lbar-divider{width:1px;background:var(--border);align-self:stretch;margin:0 4px}
 .lbar-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:5px}
@@ -101,8 +102,9 @@ body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;
 .btn:hover{background:var(--purple-bg);border-color:var(--purple);color:var(--purple)}
 
 /* TABS */
-.tabs{display:flex;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;justify-content:center}
-.tab{padding:10px 18px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.06em;transition:all .2s}
+.tabs{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;justify-content:center}
+.tabs-inner{display:flex;gap:0;padding:0 10px;overflow-x:auto}
+.tab{padding:10px 16px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.06em;transition:all .2s;white-space:nowrap;flex-shrink:0}
 .tab.active{color:var(--purple);border-bottom-color:var(--purple)}
 .tab:hover:not(.active){color:var(--text)}
 
@@ -240,17 +242,20 @@ tr:hover td{background:var(--bg3)}
 
 <!-- TABS -->
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('dashboard',this)">📊 Dashboard</div>
-  <div class="tab" onclick="switchTab('crypto',this)">₿ Cryptos</div>
-  <div class="tab" onclick="switchTab('stocks',this)">📈 Actions</div>
-  <div class="tab" onclick="switchTab('etfs',this)">🏦 ETFs</div>
-  <div class="tab" onclick="switchTab('history',this)">📋 Historique</div>
-  <div class="tab" onclick="switchTab('positions',this)">💼 Positions</div>
-  <div class="tab" onclick="switchTab('whales',this)">🐋 Whales</div>
+  <div class="tabs-inner">
+    <div class="tab active" onclick="switchTab('dashboard',this)">📊 Dashboard</div>
+    <div class="tab" onclick="switchTab('crypto',this)">₿ Cryptos</div>
+    <div class="tab" onclick="switchTab('stocks',this)">📈 Actions</div>
+    <div class="tab" onclick="switchTab('etfs',this)">🏦 ETFs</div>
+    <div class="tab" onclick="switchTab('history',this)">📋 Historique</div>
+    <div class="tab" onclick="switchTab('positions',this)">💼 Positions</div>
+    <div class="tab" onclick="switchTab('whales',this)">🐋 Whales</div>
+  </div>
 </div>
 
 <!-- BARRES APPRENTISSAGE -->
 <div class="learning-bars" id="learningBars">
+  <div class="lbars-inner">
   <!-- Barre 1 : Deep Learning ML -->
   <div class="lbar-wrap">
     <div class="lbar-header">
@@ -270,6 +275,7 @@ tr:hover td{background:var(--bg3)}
     <div class="lbar-track"><div class="lbar-fill wisdom" id="wisdomBarFill" style="width:0%"></div></div>
     <div class="lbar-sub" id="wisdomBarSub">Première distillation après 10 trades...</div>
   </div>
+  </div><!-- /lbars-inner -->
 </div>
 
 <!-- SEARCH BAR -->
