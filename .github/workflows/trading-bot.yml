@@ -2,7 +2,6 @@ name: HAOUD Trading Bot v5.0
 
 on:
   schedule:
-    # Toutes les 5 minutes (minimum GitHub Actions)
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -41,7 +40,16 @@ jobs:
         run: |
           git config --local user.email "bot@haoud-trading.ai"
           git config --local user.name "HAOUD Bot v5"
-          git add docs/trade_history.json docs/bot_state.json docs/macro_cache.json docs/backtest.json docs/optimized_params.json docs/whale_alerts.json docs/learning.json docs/wisdom.json docs/ml_model.pkl 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "🤖 v5 update — $(date '+%d/%m/%Y %H:%M') UTC"
-          git pull --rebase origin main
+          # Ajouter tous les fichiers modifies
+          git add -f docs/trade_history.json docs/bot_state.json docs/macro_cache.json \
+                     docs/backtest.json docs/optimized_params.json \
+                     docs/learning.json docs/wisdom.json || true
+          # Ajouter le modele ML si present (fichier binaire)
+          [ -f docs/ml_model.pkl ] && git add -f docs/ml_model.pkl || true
+          # Commiter seulement si changements
+          git diff --staged --quiet && echo "Rien a commiter" && exit 0
+          git commit -m "🤖 v5 update — $(date '+%d/%m/%Y %H:%M') UTC"
+          # Récupérer les changements distants avant push
+          git fetch origin main
+          git rebase origin/main
           git push
