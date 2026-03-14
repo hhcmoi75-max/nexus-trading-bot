@@ -159,7 +159,7 @@ CLAUDE_HOUR_UTC     = 8
 WISDOM_DAY_OF_WEEK  = 0   # Lundi = distillation hebdo
 
 # Nombre minimum de trades avant d'activer le ML
-ML_MIN_TRADES = 20
+ML_MIN_TRADES = 13  # Reduit pour activer avec donnees bootstrap
 
 # ============================================================
 # POLYGON.IO - API BACKUP POUR ACTIONS/ETF
@@ -718,8 +718,17 @@ def distill_wisdom(history, learning_data):
     if len(trade_log) < 10:
         return None
 
+    # Separer trades reels et simules pour stats fiables
+    real_trades = [t for t in trade_log if not t.get("simulated")]
+    sim_trades  = [t for t in trade_log if t.get("simulated")]
+    print("  [WISDOM] " + str(len(real_trades)) + " trades reels + " +
+          str(len(sim_trades)) + " simules")
+
+    # Utiliser trades reels si disponibles, sinon tous
+    analysis_trades = real_trades if len(real_trades) >= 5 else trade_log
+
     # Preparer un resume compact
-    recent_trades = trade_log[-50:]
+    recent_trades = analysis_trades[-50:]
     best_trades   = sorted(recent_trades, key=lambda x: x.get("pnl_pct", 0), reverse=True)[:5]
     worst_trades  = sorted(recent_trades, key=lambda x: x.get("pnl_pct", 0))[:5]
     best_assets   = sorted(asset_patt.items(), key=lambda x: x[1].get("win_rate", 0), reverse=True)[:5]
