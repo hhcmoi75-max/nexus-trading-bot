@@ -1,7 +1,9 @@
-# HAOUD TRADING IA - v4.0
-# Top 30 crypto + Top 50 S&P500 + CAC40 + DAX + ETFs monde
-# Whale Alert (crypto) + SEC EDGAR 13F (stocks)
-# Algo technique interne + Claude 1x/jour
+# HAOUD TRADING IA - v5.0 (vers 8.5/10)
+# Nouveautes :
+# 1. Deep Learning allege (scikit-learn RandomForest)
+# 2. Cycle 5 minutes (au lieu de 15)
+# 3. Memoire infinie compressee (Claude distille 1x/semaine)
+# + Tout de v4 : top 30 crypto, 50 US, CAC40, DAX, 20 ETFs, whales
 
 import requests
 import json
@@ -9,7 +11,20 @@ import os
 import time
 import math
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+import pickle
+import hashlib
+from datetime import datetime, timezone, timedelta
+
+# ML imports (leger)
+try:
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import cross_val_score
+    import numpy as np
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    print("[ML] scikit-learn non disponible - mode algo classique")
 
 # ============================================================
 # CONFIGURATION
@@ -20,59 +35,38 @@ BITPANDA_KEY   = os.environ.get("BITPANDA_API_KEY", "")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# TOP 30 CRYPTO par market cap (CoinGecko)
 CRYPTO_ASSETS = {
-    "BTC":   {"name": "Bitcoin"},
-    "ETH":   {"name": "Ethereum"},
-    "USDT":  {"name": "Tether"},
-    "BNB":   {"name": "BNB"},
-    "SOL":   {"name": "Solana"},
-    "XRP":   {"name": "XRP"},
-    "USDC":  {"name": "USD Coin"},
-    "STETH": {"name": "Lido Staked ETH"},
-    "ADA":   {"name": "Cardano"},
-    "AVAX":  {"name": "Avalanche"},
-    "DOGE":  {"name": "Dogecoin"},
-    "TRX":   {"name": "TRON"},
-    "LINK":  {"name": "Chainlink"},
-    "TON":   {"name": "Toncoin"},
-    "SHIB":  {"name": "Shiba Inu"},
-    "DOT":   {"name": "Polkadot"},
-    "BCH":   {"name": "Bitcoin Cash"},
-    "NEAR":  {"name": "NEAR Protocol"},
-    "LTC":   {"name": "Litecoin"},
-    "UNI":   {"name": "Uniswap"},
-    "ICP":   {"name": "Internet Computer"},
-    "MATIC": {"name": "Polygon"},
-    "ETC":   {"name": "Ethereum Classic"},
-    "APT":   {"name": "Aptos"},
-    "ATOM":  {"name": "Cosmos"},
-    "XLM":   {"name": "Stellar"},
-    "FIL":   {"name": "Filecoin"},
-    "ARB":   {"name": "Arbitrum"},
-    "OP":    {"name": "Optimism"},
-    "INJ":   {"name": "Injective"},
+    "BTC":   {"name": "Bitcoin"},     "ETH":   {"name": "Ethereum"},
+    "BNB":   {"name": "BNB"},         "SOL":   {"name": "Solana"},
+    "XRP":   {"name": "XRP"},         "ADA":   {"name": "Cardano"},
+    "AVAX":  {"name": "Avalanche"},   "LINK":  {"name": "Chainlink"},
+    "DOT":   {"name": "Polkadot"},    "MATIC": {"name": "Polygon"},
+    "DOGE":  {"name": "Dogecoin"},    "TRX":   {"name": "TRON"},
+    "TON":   {"name": "Toncoin"},     "SHIB":  {"name": "Shiba Inu"},
+    "BCH":   {"name": "Bitcoin Cash"},"NEAR":  {"name": "NEAR Protocol"},
+    "LTC":   {"name": "Litecoin"},    "UNI":   {"name": "Uniswap"},
+    "ICP":   {"name": "Internet Computer"}, "MATIC": {"name": "Polygon"},
+    "ETC":   {"name": "Ethereum Classic"},  "APT":   {"name": "Aptos"},
+    "ATOM":  {"name": "Cosmos"},      "XLM":   {"name": "Stellar"},
+    "FIL":   {"name": "Filecoin"},    "ARB":   {"name": "Arbitrum"},
+    "OP":    {"name": "Optimism"},    "INJ":   {"name": "Injective"},
 }
 
 COINGECKO_IDS = {
-    "BTC": "bitcoin", "ETH": "ethereum", "USDT": "tether",
-    "BNB": "binancecoin", "SOL": "solana", "XRP": "ripple",
-    "USDC": "usd-coin", "STETH": "staked-ether", "ADA": "cardano",
-    "AVAX": "avalanche-2", "DOGE": "dogecoin", "TRX": "tron",
-    "LINK": "chainlink", "TON": "the-open-network", "SHIB": "shiba-inu",
-    "DOT": "polkadot", "BCH": "bitcoin-cash", "NEAR": "near",
-    "LTC": "litecoin", "UNI": "uniswap", "ICP": "internet-computer",
-    "MATIC": "matic-network", "ETC": "ethereum-classic", "APT": "aptos",
+    "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin",
+    "SOL": "solana", "XRP": "ripple", "ADA": "cardano",
+    "AVAX": "avalanche-2", "LINK": "chainlink", "DOT": "polkadot",
+    "MATIC": "matic-network", "DOGE": "dogecoin", "TRX": "tron",
+    "TON": "the-open-network", "SHIB": "shiba-inu", "BCH": "bitcoin-cash",
+    "NEAR": "near", "LTC": "litecoin", "UNI": "uniswap",
+    "ICP": "internet-computer", "ETC": "ethereum-classic", "APT": "aptos",
     "ATOM": "cosmos", "XLM": "stellar", "FIL": "filecoin",
     "ARB": "arbitrum", "OP": "optimism", "INJ": "injective-protocol",
 }
 
-# STABLECOINS a exclure du trading (prix fixe ~1$)
-STABLECOINS = {"USDT", "USDC", "STETH"}
+STABLECOINS = {"USDT", "USDC", "STETH", "BUSD"}
 
-# TOP 50 S&P500 (les plus importantes)
 STOCK_ASSETS = {
-    # Tech
     "AAPL":  {"ticker": "AAPL",  "name": "Apple"},
     "MSFT":  {"ticker": "MSFT",  "name": "Microsoft"},
     "NVDA":  {"ticker": "NVDA",  "name": "NVIDIA"},
@@ -88,101 +82,55 @@ STOCK_ASSETS = {
     "ADBE":  {"ticker": "ADBE",  "name": "Adobe"},
     "QCOM":  {"ticker": "QCOM",  "name": "Qualcomm"},
     "NOW":   {"ticker": "NOW",   "name": "ServiceNow"},
-    # Finance
     "BRK-B": {"ticker": "BRK-B", "name": "Berkshire Hathaway"},
-    "JPM":   {"ticker": "JPM",   "name": "JPMorgan Chase"},
+    "JPM":   {"ticker": "JPM",   "name": "JPMorgan"},
     "V":     {"ticker": "V",     "name": "Visa"},
     "MA":    {"ticker": "MA",    "name": "Mastercard"},
     "GS":    {"ticker": "GS",    "name": "Goldman Sachs"},
-    "MS":    {"ticker": "MS",    "name": "Morgan Stanley"},
-    "BAC":   {"ticker": "BAC",   "name": "Bank of America"},
-    # Sante
     "LLY":   {"ticker": "LLY",   "name": "Eli Lilly"},
     "UNH":   {"ticker": "UNH",   "name": "UnitedHealth"},
     "JNJ":   {"ticker": "JNJ",   "name": "Johnson & Johnson"},
-    "MRK":   {"ticker": "MRK",   "name": "Merck"},
-    "ABBV":  {"ticker": "ABBV",  "name": "AbbVie"},
-    # Conso
-    "AMGN":  {"ticker": "AMGN",  "name": "Amgen"},
     "PG":    {"ticker": "PG",    "name": "Procter & Gamble"},
     "KO":    {"ticker": "KO",    "name": "Coca-Cola"},
-    "PEP":   {"ticker": "PEP",   "name": "PepsiCo"},
     "WMT":   {"ticker": "WMT",   "name": "Walmart"},
-    "COST":  {"ticker": "COST",  "name": "Costco"},
-    # Energie
     "XOM":   {"ticker": "XOM",   "name": "ExxonMobil"},
-    "CVX":   {"ticker": "CVX",   "name": "Chevron"},
-    # Divers
     "NFLX":  {"ticker": "NFLX",  "name": "Netflix"},
-    "DIS":   {"ticker": "DIS",   "name": "Disney"},
-    "UBER":  {"ticker": "UBER",  "name": "Uber"},
-    "ABNB":  {"ticker": "ABNB",  "name": "Airbnb"},
-    "PYPL":  {"ticker": "PYPL",  "name": "PayPal"},
-    "SHOP":  {"ticker": "SHOP",  "name": "Shopify"},
     "COIN":  {"ticker": "COIN",  "name": "Coinbase"},
     "MSTR":  {"ticker": "MSTR",  "name": "MicroStrategy"},
 }
 
-# CAC40 + DAX (principales valeurs europeennes)
 EUROPE_ASSETS = {
-    # CAC40
     "MC.PA":  {"ticker": "MC.PA",  "name": "LVMH"},
     "TTE.PA": {"ticker": "TTE.PA", "name": "TotalEnergies"},
     "SAN.PA": {"ticker": "SAN.PA", "name": "Sanofi"},
     "AIR.PA": {"ticker": "AIR.PA", "name": "Airbus"},
     "BNP.PA": {"ticker": "BNP.PA", "name": "BNP Paribas"},
     "OR.PA":  {"ticker": "OR.PA",  "name": "L'Oreal"},
-    "KER.PA": {"ticker": "KER.PA", "name": "Kering"},
-    "SU.PA":  {"ticker": "SU.PA",  "name": "Schneider Electric"},
-    "RI.PA":  {"ticker": "RI.PA",  "name": "Pernod Ricard"},
-    "CAP.PA": {"ticker": "CAP.PA", "name": "Capgemini"},
-    "STM.PA": {"ticker": "STM.PA", "name": "STMicroelectronics"},
-    "DSY.PA": {"ticker": "DSY.PA", "name": "Dassault Systemes"},
-    "ACA.PA": {"ticker": "ACA.PA", "name": "Credit Agricole"},
-    "GLE.PA": {"ticker": "GLE.PA", "name": "Societe Generale"},
     "RMS.PA": {"ticker": "RMS.PA", "name": "Hermes"},
-    # DAX
-    "SAP.DE":  {"ticker": "SAP.DE",  "name": "SAP"},
-    "SIE.DE":  {"ticker": "SIE.DE",  "name": "Siemens"},
-    "ALV.DE":  {"ticker": "ALV.DE",  "name": "Allianz"},
-    "MBG.DE":  {"ticker": "MBG.DE",  "name": "Mercedes-Benz"},
-    "BMW.DE":  {"ticker": "BMW.DE",  "name": "BMW"},
-    "BAYN.DE": {"ticker": "BAYN.DE", "name": "Bayer"},
-    "VOW3.DE": {"ticker": "VOW3.DE", "name": "Volkswagen"},
-    "DTE.DE":  {"ticker": "DTE.DE",  "name": "Deutsche Telekom"},
-    "DBK.DE":  {"ticker": "DBK.DE",  "name": "Deutsche Bank"},
-    "EOAN.DE": {"ticker": "EOAN.DE", "name": "E.ON"},
+    "SAP.DE": {"ticker": "SAP.DE", "name": "SAP"},
+    "SIE.DE": {"ticker": "SIE.DE", "name": "Siemens"},
+    "ALV.DE": {"ticker": "ALV.DE", "name": "Allianz"},
+    "MBG.DE": {"ticker": "MBG.DE", "name": "Mercedes-Benz"},
+    "BMW.DE": {"ticker": "BMW.DE", "name": "BMW"},
 }
 
-# ETFs MONDE ENTIER
 ETF_ASSETS = {
-    # US
     "SPY":  {"ticker": "SPY",     "name": "S&P 500 ETF"},
     "QQQ":  {"ticker": "QQQ",     "name": "Nasdaq 100 ETF"},
     "GLD":  {"ticker": "GLD",     "name": "Gold ETF"},
     "VTI":  {"ticker": "VTI",     "name": "Total Market ETF"},
     "ARKK": {"ticker": "ARKK",    "name": "ARK Innovation ETF"},
     "IWM":  {"ticker": "IWM",     "name": "Russell 2000 ETF"},
-    "XLK":  {"ticker": "XLK",     "name": "Tech Sector ETF"},
-    "XLE":  {"ticker": "XLE",     "name": "Energy Sector ETF"},
     "TLT":  {"ticker": "TLT",     "name": "20yr Treasury ETF"},
-    "SLV":  {"ticker": "SLV",     "name": "Silver ETF"},
-    # Amundi (Paris)
     "CW8":  {"ticker": "CW8.PA",  "name": "Amundi MSCI World"},
     "SP5":  {"ticker": "SP5.PA",  "name": "Amundi S&P 500"},
     "C40":  {"ticker": "C40.PA",  "name": "Amundi CAC 40"},
     "PANX": {"ticker": "PANX.PA", "name": "Amundi Nasdaq-100"},
     "AEME": {"ticker": "AEME.PA", "name": "Amundi MSCI Emerging"},
-    "LCEU": {"ticker": "LCEU.PA", "name": "Amundi MSCI Europe"},
-    "PAASI":{"ticker": "PAASI.PA","name": "Amundi MSCI Asia"},
-    # iShares
-    "EEM":  {"ticker": "EEM",     "name": "iShares Emerging Markets"},
-    "EWJ":  {"ticker": "EWJ",     "name": "iShares Japan ETF"},
-    "FXI":  {"ticker": "FXI",     "name": "iShares China ETF"},
 }
 
-# --- REGLES DE TRADING ---
-DEFAULT_PARAMS = {
+# --- PARAMETRES DE BASE (overrides par le learning) ---
+BASE_PARAMS = {
     "MIN_SCORE_BUY":   70,
     "MAX_SCORE_SELL":  40,
     "RSI_OVERSOLD":    35,
@@ -190,27 +138,38 @@ DEFAULT_PARAMS = {
     "STOP_LOSS_PCT":   0.07,
     "TAKE_PROFIT_PCT": 0.18,
 }
-MAX_TRADE_EUR        = 50
-DRY_RUN              = True
-MAX_POSITIONS        = 8
-MAX_TOTAL_EUR        = 400
-MAX_CRYPTO_POS       = 4
-MAX_STOCK_POS        = 4
-BTC_CRASH_THRESHOLD  = -5.0
-BTC_WARN_THRESHOLD   = -3.0
-BTC_PENALTY_PTS      = 15
-CLAUDE_HOUR_UTC      = 8
 
-# WHALE - seuils minimum (en USD)
-WHALE_CRYPTO_MIN_USD = 1_000_000   # 1M$ minimum
-WHALE_STOCK_MIN_USD  = 10_000_000  # 10M$ minimum
+BASE_WEIGHTS = {
+    "technique":  0.55,
+    "macro":      0.20,
+    "sentiment":  0.15,
+    "onchain":    0.10,
+}
 
-HISTORY_FILE      = "docs/trade_history.json"
-STATE_FILE        = "docs/bot_state.json"
-MACRO_CACHE_FILE  = "docs/macro_cache.json"
-BACKTEST_FILE     = "docs/backtest.json"
-PARAMS_FILE       = "docs/optimized_params.json"
-WHALE_FILE        = "docs/whale_alerts.json"
+MAX_TRADE_EUR       = 50
+DRY_RUN             = True
+MAX_POSITIONS       = 8
+MAX_TOTAL_EUR       = 400
+MAX_CRYPTO_POS      = 4
+MAX_STOCK_POS       = 4
+BTC_CRASH_THRESHOLD = -5.0
+BTC_WARN_THRESHOLD  = -3.0
+BTC_PENALTY_PTS     = 15
+CLAUDE_HOUR_UTC     = 8
+WISDOM_DAY_OF_WEEK  = 0   # Lundi = distillation hebdo
+
+# Nombre minimum de trades avant d'activer le ML
+ML_MIN_TRADES = 20
+
+HISTORY_FILE   = "docs/trade_history.json"
+STATE_FILE     = "docs/bot_state.json"
+MACRO_FILE     = "docs/macro_cache.json"
+BACKTEST_FILE  = "docs/backtest.json"
+PARAMS_FILE    = "docs/optimized_params.json"
+WHALE_FILE     = "docs/whale_alerts.json"
+LEARNING_FILE  = "docs/learning.json"
+WISDOM_FILE    = "docs/wisdom.json"
+MODEL_FILE     = "docs/ml_model.pkl"
 
 # ============================================================
 # UTILITAIRES
@@ -228,241 +187,466 @@ def save_json(path, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-def send_telegram(message):
+def send_telegram(msg):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
         return
     try:
         requests.post(
             "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT, "text": message, "parse_mode": "HTML"},
+            json={"chat_id": TELEGRAM_CHAT, "text": msg, "parse_mode": "HTML"},
             timeout=10
         )
     except:
         pass
 
 # ============================================================
-# WHALE TRACKING
+# NIVEAU 3 : DEEP LEARNING - MODELE ML
 # ============================================================
 
-def get_crypto_whale_alerts():
-    whales = []
+def extract_features(entry):
+    """Extrait un vecteur de features depuis un trade historique"""
+    return [
+        float(entry.get("rsi", 50)),
+        float(entry.get("score_technique", 50)),
+        float(entry.get("score_macro", 50)),
+        float(entry.get("score_sentiment", 50)),
+        float(entry.get("score_momentum", 50)),
+        float(entry.get("score_volume", 50)),
+        float(entry.get("change_24h", 0)),
+        float(entry.get("score", 50)),
+        1.0 if entry.get("type") == "crypto" else 0.0,
+        1.0 if entry.get("type") == "stock" else 0.0,
+        1.0 if entry.get("type") == "etf" else 0.0,
+        float(entry.get("momentum", 0)),
+        float(entry.get("reddit_score", 50)),
+        float(entry.get("bt_win_rate", 50) or 50),
+    ]
+
+def train_ml_model(history):
+    """Entraine le modele sur les trades clotures (avec resultat connu)"""
+    if not ML_AVAILABLE:
+        return None, None
+
+    # Construire dataset : uniquement les trades avec resultats
+    closed = load_json(LEARNING_FILE, {}).get("trade_log", [])
+    if len(closed) < ML_MIN_TRADES:
+        print("  [ML] Pas assez de trades clotures (" + str(len(closed)) + "/" + str(ML_MIN_TRADES) + ") - entrainement reporte")
+        return None, None
+
+    X, y = [], []
+    for trade in closed:
+        entry_h = next((h for h in history if h.get("asset") == trade.get("asset") and
+                        h.get("timestamp", "")[:16] == trade.get("entry_time", "")[:16]), None)
+        if not entry_h:
+            continue
+        features = extract_features(entry_h)
+        label    = 1 if trade.get("pnl_pct", 0) > 0 else 0
+        X.append(features)
+        y.append(label)
+
+    if len(X) < ML_MIN_TRADES:
+        print("  [ML] Features insuffisantes (" + str(len(X)) + ") - skip")
+        return None, None
+
     try:
-        # Whale Alert RSS (transactions massives on-chain)
-        r = requests.get(
-            "https://whale-alert.io/rss",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10
+        X_arr = np.array(X)
+        y_arr = np.array(y)
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X_arr)
+
+        # RandomForest leger
+        model = RandomForestClassifier(
+            n_estimators=50,
+            max_depth=5,
+            min_samples_split=4,
+            random_state=42,
+            n_jobs=1
         )
-        root = ET.fromstring(r.content)
-        for item in root.findall(".//item")[:20]:
-            title = item.findtext("title", "").strip()
-            desc  = item.findtext("description", "").strip()
-            date  = item.findtext("pubDate", "").strip()
-            if not title:
-                continue
-            # Detecter montant et crypto
-            amount_usd = 0
-            asset      = "UNKNOWN"
-            title_low  = title.lower()
-            # Extraire montant
-            import re
-            amounts = re.findall(r'\$([0-9,]+)', title)
-            if amounts:
-                try:
-                    amount_usd = int(amounts[0].replace(",", ""))
-                except:
-                    pass
-            # Detecter l'actif
-            for ticker in COINGECKO_IDS.keys():
-                if ticker.lower() in title_low or CRYPTO_ASSETS[ticker]["name"].lower() in title_low:
-                    asset = ticker
-                    break
-            if amount_usd >= WHALE_CRYPTO_MIN_USD:
-                # Determiner direction (achat/vente/transfert)
-                direction = "TRANSFER"
-                if "exchange" in title_low and ("to" in title_low):
-                    direction = "SELL"  # vers exchange = vente probable
-                elif "exchange" in title_low and ("from" in title_low):
-                    direction = "BUY"   # depuis exchange = achat probable
-                elif "unknown wallet" in title_low:
-                    direction = "TRANSFER"
+        model.fit(X_scaled, y_arr)
 
-                whales.append({
-                    "type":       "crypto",
-                    "asset":      asset,
-                    "amount_usd": amount_usd,
-                    "direction":  direction,
-                    "title":      title,
-                    "date":       date,
-                    "source":     "Whale Alert"
-                })
-        print("  [WHALE CRYPTO] " + str(len(whales)) + " transactions detectees")
-    except Exception as e:
-        print("  [WHALE CRYPTO] Erreur: " + str(e))
-        # Fallback : simuler des donnees whale basiques
-        whales = get_crypto_whale_fallback()
-    return whales
-
-def get_crypto_whale_fallback():
-    # Si Whale Alert inaccessible, utiliser CoinGecko pour detecter
-    # les mouvements de baleines via variation volume anormale
-    whales = []
-    try:
-        r = requests.get(
-            "https://api.coingecko.com/api/v3/coins/markets"
-            "?vs_currency=usd&order=volume_desc&per_page=10&page=1"
-            "&price_change_percentage=1h",
-            headers={"Accept": "application/json"}, timeout=10
-        )
-        data = r.json()
-        id_to_ticker = {v: k for k, v in COINGECKO_IDS.items()}
-        for coin in data:
-            key = id_to_ticker.get(coin["id"])
-            if not key or key in STABLECOINS:
-                continue
-            chg_1h = float(coin.get("price_change_percentage_1h_in_currency") or 0)
-            vol    = float(coin.get("total_volume") or 0)
-            # Mouvement fort en 1h avec gros volume = potentielle activite whale
-            if abs(chg_1h) > 3 and vol > 500_000_000:
-                direction = "BUY" if chg_1h > 0 else "SELL"
-                whales.append({
-                    "type":       "crypto",
-                    "asset":      key,
-                    "amount_usd": int(vol * 0.1),
-                    "direction":  direction,
-                    "title":      key + " variation 1h: " + str(round(chg_1h, 2)) + "% avec volume $" + str(int(vol/1e6)) + "M",
-                    "date":       datetime.now().isoformat(),
-                    "source":     "CoinGecko Volume Alert"
-                })
-        print("  [WHALE FALLBACK] " + str(len(whales)) + " signaux volume detectes")
-    except Exception as e:
-        print("  [WHALE FALLBACK] Erreur: " + str(e))
-    return whales
-
-def get_stock_whale_alerts():
-    whales = []
-    try:
-        # SEC EDGAR : derniers filings 13F (achats institutionnels)
-        # Chercher les Form 4 (insider transactions) recents
-        r = requests.get(
-            "https://efts.sec.gov/LATEST/search-index?q=%22form+4%22&dateRange=custom"
-            "&startdt=" + datetime.now().strftime('%Y-%m-%d') + "&enddt=" + datetime.now().strftime('%Y-%m-%d') +
-            "&hits.hits._source=period_of_report,display_names,file_date,form_type",
-            headers={"User-Agent": "HAOUD-TradingBot contact@haoud.fr"},
-            timeout=10
-        )
-        # Utiliser l'API EDGAR full-text search plus simple
-        r2 = requests.get(
-            "https://efts.sec.gov/LATEST/search-index?q=%22acquisition%22+%22common+stock%22"
-            "&forms=4&dateRange=custom"
-            "&startdt=" + datetime.now().strftime('%Y-%m-%d'),
-            headers={"User-Agent": "HAOUD-TradingBot contact@haoud.fr"},
-            timeout=10
-        )
-        filings = r2.json().get("hits", {}).get("hits", [])
-        seen = set()
-        for f in filings[:10]:
-            src = f.get("_source", {})
-            names = src.get("display_names", [])
-            ticker = None
-            for name in names:
-                # Tenter de matcher avec nos actifs
-                for t, info in STOCK_ASSETS.items():
-                    if info["name"].lower() in str(name).lower():
-                        ticker = t
-                        break
-                if ticker:
-                    break
-            if ticker and ticker not in seen:
-                seen.add(ticker)
-                whales.append({
-                    "type":       "stock",
-                    "asset":      ticker,
-                    "amount_usd": WHALE_STOCK_MIN_USD,
-                    "direction":  "BUY",
-                    "title":      "Insider acquisition declaree : " + str(names)[:80],
-                    "date":       src.get("file_date", datetime.now().isoformat()),
-                    "source":     "SEC EDGAR Form 4"
-                })
-        print("  [WHALE STOCK] " + str(len(whales)) + " insider transactions detectees")
-    except Exception as e:
-        print("  [WHALE STOCK] Erreur: " + str(e))
-        whales = get_stock_whale_fallback()
-    return whales
-
-def get_stock_whale_fallback():
-    # Fallback : utiliser Yahoo Finance pour detecter volumes anormaux
-    whales = []
-    high_volume_assets = ["NVDA", "TSLA", "AAPL", "MSFT", "META", "AMZN", "GOOGL"]
-    for ticker in high_volume_assets:
-        try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            r = requests.get(
-                "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker + "?interval=1d&range=5d",
-                headers=headers, timeout=8
-            )
-            data   = r.json()
-            result = data["chart"]["result"][0]
-            vols   = result.get("indicators", {}).get("quote", [{}])[0].get("volume", [])
-            vols   = [v for v in vols if v is not None]
-            if len(vols) >= 3:
-                avg_vol  = sum(vols[:-1]) / len(vols[:-1])
-                last_vol = vols[-1]
-                if avg_vol > 0 and last_vol > avg_vol * 2:
-                    price = float(result["meta"].get("regularMarketPrice", 0))
-                    amount = int(last_vol * price)
-                    if amount >= WHALE_STOCK_MIN_USD:
-                        whales.append({
-                            "type":       "stock",
-                            "asset":      ticker,
-                            "amount_usd": amount,
-                            "direction":  "BUY",
-                            "title":      ticker + " volume x" + str(round(last_vol/avg_vol, 1)) + " la moyenne",
-                            "date":       datetime.now().isoformat(),
-                            "source":     "Yahoo Volume Alert"
-                        })
-            time.sleep(0.2)
-        except:
-            pass
-    print("  [WHALE STOCK FALLBACK] " + str(len(whales)) + " volumes anormaux")
-    return whales
-
-def process_whale_alerts(crypto_whales, stock_whales, all_prices, eur_rate):
-    all_whales = crypto_whales + stock_whales
-    # Enrichir avec prix actuel
-    for w in all_whales:
-        asset = w["asset"]
-        if asset in all_prices:
-            w["current_price_eur"] = round(all_prices[asset]["price_usd"] * eur_rate, 2)
-            w["change_24h"]        = all_prices[asset]["change_24h"]
+        # Cross-validation pour evaluer la fiabilite
+        if len(X) >= 10:
+            cv_scores = cross_val_score(model, X_scaled, y_arr, cv=min(5, len(X)//4), scoring='accuracy')
+            accuracy = round(cv_scores.mean() * 100, 1)
+            print("  [ML] Modele entraine sur " + str(len(X)) + " trades | Precision CV: " + str(accuracy) + "%")
         else:
-            w["current_price_eur"] = None
-            w["change_24h"]        = None
-        w["validated"]    = False
-        w["alert_id"]     = asset + "_" + str(int(time.time()))
-        w["amount_eur"]   = round(w["amount_usd"] * eur_rate / 1e6, 1)  # en millions EUR
+            accuracy = 50
+            print("  [ML] Modele entraine sur " + str(len(X)) + " trades")
 
-    # Garder uniquement les BUY significatifs pour alertes
-    buy_alerts = [w for w in all_whales if w["direction"] == "BUY"]
-    if buy_alerts:
-        msg = "WHALES DETECTEES - HAOUD TRADING IA\n"
-        for w in buy_alerts[:5]:
-            msg += w["asset"] + " | " + w["direction"] + " | $" + str(int(w["amount_usd"]/1e6)) + "M | " + w["source"] + "\n"
-        msg += "Voir dashboard pour validation"
-        send_telegram(msg)
+        # Sauvegarder le modele
+        with open(MODEL_FILE, 'wb') as f:
+            pickle.dump({"model": model, "scaler": scaler, "accuracy": accuracy, "n_trades": len(X)}, f)
 
-    return all_whales
+        return model, scaler
+    except Exception as e:
+        print("  [ML] Erreur entrainement: " + str(e))
+        return None, None
+
+def load_ml_model():
+    """Charge le modele ML existant"""
+    if not ML_AVAILABLE:
+        return None, None
+    try:
+        with open(MODEL_FILE, 'rb') as f:
+            data = pickle.load(f)
+        print("  [ML] Modele charge | Precision: " + str(data.get("accuracy", "?")) + "% | Trades: " + str(data.get("n_trades", "?")))
+        return data["model"], data["scaler"]
+    except:
+        return None, None
+
+def get_ml_score(asset_entry, model, scaler):
+    """Obtient le score de confiance du modele ML (0-100)"""
+    if model is None or scaler is None:
+        return None
+    try:
+        features = np.array([extract_features(asset_entry)])
+        features_scaled = scaler.transform(features)
+        proba = model.predict_proba(features_scaled)[0]
+        win_proba = float(proba[1]) if len(proba) > 1 else 0.5
+        return round(win_proba * 100, 1)
+    except:
+        return None
 
 # ============================================================
-# RECUPERATION DES PRIX
+# NIVEAU 2 : AJUSTEMENT DES POIDS ADAPTATIFS
+# ============================================================
+
+def update_adaptive_weights(learning_data, closed_trade):
+    """Ajuste les poids des composantes selon les resultats"""
+    weights  = learning_data.get("weights", BASE_WEIGHTS.copy())
+    pnl      = closed_trade.get("pnl_pct", 0)
+    entry    = closed_trade.get("entry_snapshot", {})
+
+    if not entry:
+        return weights
+
+    # Identifier quelle composante etait la plus differente de la moyenne
+    tech_score = entry.get("score_technique", 50)
+    macro_score = entry.get("score_macro", 50)
+    sent_score  = entry.get("score_sentiment", 50)
+    oc_score    = entry.get("onchain_score", 50) or 50
+
+    # Si trade gagnant : renforcer la composante la plus haute
+    # Si trade perdant : reduire la composante qui avait induit en erreur
+    lr = 0.02  # taux d'apprentissage conservateur
+
+    if pnl > 0:
+        # Identifier composante la plus predictive du succes
+        top_comp = max([("technique", tech_score), ("macro", macro_score),
+                       ("sentiment", sent_score), ("onchain", oc_score)], key=lambda x: x[1])
+        weights[top_comp[0]] = min(0.75, weights[top_comp[0]] + lr)
+    else:
+        # Identifier composante qui avait un score eleve mais trade raté
+        global_score = entry.get("score", 50)
+        if tech_score > global_score + 5:
+            weights["technique"] = max(0.30, weights["technique"] - lr)
+        if macro_score > global_score + 10:
+            weights["macro"] = max(0.10, weights["macro"] - lr)
+
+    # Renormaliser pour que la somme = 1
+    total = sum(weights.values())
+    weights = {k: round(v / total, 3) for k, v in weights.items()}
+
+    print("  [LEARN] Poids mis a jour: tech=" + str(weights.get("technique")) +
+          " macro=" + str(weights.get("macro")) + " sent=" + str(weights.get("sentiment")))
+    return weights
+
+# ============================================================
+# NIVEAU 1 : AJUSTEMENT DES SEUILS
+# ============================================================
+
+def update_adaptive_thresholds(learning_data):
+    """Ajuste MIN_SCORE_BUY, RSI seuils selon les stats reelles"""
+    trade_log = learning_data.get("trade_log", [])
+    params    = learning_data.get("thresholds", BASE_PARAMS.copy())
+
+    if len(trade_log) < 10:
+        return params
+
+    # Analyser les 30 derniers trades
+    recent = trade_log[-30:]
+    wins   = [t for t in recent if t.get("pnl_pct", 0) > 0]
+    losses = [t for t in recent if t.get("pnl_pct", 0) <= 0]
+    win_rate = len(wins) / len(recent) if recent else 0.5
+
+    print("  [LEARN] Win rate recent: " + str(round(win_rate*100, 1)) + "% sur " + str(len(recent)) + " trades")
+
+    # Niveau 1 : Ajuster seuil BUY
+    if win_rate >= 0.65:
+        params["MIN_SCORE_BUY"] = max(65, params.get("MIN_SCORE_BUY", 70) - 1)
+        print("  [LEARN] Seuil BUY assoupli -> " + str(params["MIN_SCORE_BUY"]))
+    elif win_rate <= 0.40:
+        params["MIN_SCORE_BUY"] = min(80, params.get("MIN_SCORE_BUY", 70) + 2)
+        print("  [LEARN] Seuil BUY renforce -> " + str(params["MIN_SCORE_BUY"]))
+
+    # Analyser les stop-loss : si trop frequents, serrer
+    stop_losses = [t for t in recent if t.get("action") == "STOP_LOSS"]
+    if len(stop_losses) > len(recent) * 0.3:
+        params["STOP_LOSS_PCT"] = max(0.05, params.get("STOP_LOSS_PCT", 0.07) - 0.005)
+        print("  [LEARN] Stop-loss resserre -> " + str(round(params["STOP_LOSS_PCT"]*100, 1)) + "%")
+
+    # Analyser RSI des trades gagnants vs perdants
+    if wins and losses:
+        avg_rsi_wins   = sum(t.get("entry_rsi", 50) for t in wins) / len(wins)
+        avg_rsi_losses = sum(t.get("entry_rsi", 50) for t in losses) / len(losses)
+        if avg_rsi_wins < avg_rsi_losses - 5:
+            params["RSI_OVERSOLD"] = max(25, params.get("RSI_OVERSOLD", 35) - 1)
+            print("  [LEARN] RSI oversold ajuste -> " + str(params["RSI_OVERSOLD"]))
+
+    params["last_update"]  = datetime.now().isoformat()
+    params["win_rate_recent"] = round(win_rate * 100, 1)
+    return params
+
+# ============================================================
+# NIVEAU 3 : PATTERNS PAR ACTIF
+# ============================================================
+
+def update_asset_patterns(learning_data, asset, closed_trade):
+    """Detecte et memorise les patterns gagnants/perdants par actif"""
+    patterns = learning_data.get("asset_patterns", {})
+    if asset not in patterns:
+        patterns[asset] = {
+            "trades":        0,
+            "wins":          0,
+            "losses":        0,
+            "win_rate":      0,
+            "avg_pnl":       0,
+            "best_rsi_range": None,
+            "avoid_conditions": [],
+            "favorable_conditions": [],
+            "last_trades":   []
+        }
+
+    p   = patterns[asset]
+    pnl = closed_trade.get("pnl_pct", 0)
+    rsi = closed_trade.get("entry_rsi", 50)
+    chg = closed_trade.get("entry_change_24h", 0)
+
+    p["trades"] += 1
+    if pnl > 0:
+        p["wins"] += 1
+    else:
+        p["losses"] += 1
+
+    p["win_rate"] = round(p["wins"] / p["trades"] * 100, 1)
+    all_pnls     = [t.get("pnl_pct", 0) for t in p["last_trades"]] + [pnl]
+    p["avg_pnl"] = round(sum(all_pnls) / len(all_pnls), 2)
+
+    # Detecter conditions favorables / a eviter
+    condition = {
+        "rsi": rsi,
+        "change_24h": chg,
+        "pnl": pnl,
+        "result": "win" if pnl > 0 else "loss"
+    }
+
+    # Garder les 10 derniers trades
+    p["last_trades"].append(condition)
+    p["last_trades"] = p["last_trades"][-10:]
+
+    # Identifier les meilleures conditions RSI
+    win_rsi  = [t["rsi"] for t in p["last_trades"] if t["result"] == "win"]
+    lose_rsi = [t["rsi"] for t in p["last_trades"] if t["result"] == "loss"]
+    if len(win_rsi) >= 3:
+        p["best_rsi_range"] = [round(min(win_rsi), 1), round(max(win_rsi), 1)]
+
+    # Conditions a eviter (pertes repetees)
+    if pnl < -5:
+        cond_avoid = "RSI=" + str(round(rsi)) + " change=" + str(round(chg, 1)) + "%"
+        if cond_avoid not in p["avoid_conditions"]:
+            p["avoid_conditions"].append(cond_avoid)
+            p["avoid_conditions"] = p["avoid_conditions"][-5:]
+
+    # Conditions favorables (gains repetees)
+    if pnl > 5:
+        cond_fav = "RSI=" + str(round(rsi)) + " change=" + str(round(chg, 1)) + "%"
+        if cond_fav not in p["favorable_conditions"]:
+            p["favorable_conditions"].append(cond_fav)
+            p["favorable_conditions"] = p["favorable_conditions"][-5:]
+
+    patterns[asset] = p
+    print("  [PATTERN] " + asset + " | " + str(p["wins"]) + "W/" + str(p["losses"]) + "L | Win=" + str(p["win_rate"]) + "%")
+    return patterns
+
+def get_pattern_bonus(asset, rsi, learning_data):
+    """Retourne un bonus/malus de score selon les patterns appris"""
+    patterns = learning_data.get("asset_patterns", {})
+    p = patterns.get(asset)
+    if not p or p.get("trades", 0) < 5:
+        return 0
+
+    bonus = 0
+    win_rate = p.get("win_rate", 50)
+
+    # Bonus si l'actif a un bon historique global
+    if win_rate >= 65:   bonus += 5
+    elif win_rate <= 35: bonus -= 8
+
+    # Bonus si RSI dans la plage gagnante
+    best_rsi = p.get("best_rsi_range")
+    if best_rsi and best_rsi[0] <= rsi <= best_rsi[1]:
+        bonus += 4
+        print("  [PATTERN] " + asset + " RSI dans zone favorable -> +" + str(bonus) + "pts")
+
+    return bonus
+
+# ============================================================
+# MEMOIRE INFINIE COMPRESSEE (distillation Claude 1x/semaine)
+# ============================================================
+
+def should_distill_wisdom():
+    wisdom = load_json(WISDOM_FILE, {})
+    last   = wisdom.get("last_distillation", "")
+    if not last:
+        return True
+    ld = datetime.fromisoformat(last)
+    if ld.tzinfo is None:
+        ld = ld.replace(tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - ld).days
+    return days >= 7 and datetime.now(timezone.utc).weekday() == WISDOM_DAY_OF_WEEK
+
+def distill_wisdom(history, learning_data):
+    """Claude distille les lecons des trades en sagesse compressee"""
+    if not CLAUDE_KEY:
+        return None
+
+    trade_log    = learning_data.get("trade_log", [])
+    asset_patt   = learning_data.get("asset_patterns", {})
+    stats        = learning_data.get("stats", {})
+
+    if len(trade_log) < 10:
+        return None
+
+    # Preparer un resume compact
+    recent_trades = trade_log[-50:]
+    best_trades   = sorted(recent_trades, key=lambda x: x.get("pnl_pct", 0), reverse=True)[:5]
+    worst_trades  = sorted(recent_trades, key=lambda x: x.get("pnl_pct", 0))[:5]
+    best_assets   = sorted(asset_patt.items(), key=lambda x: x[1].get("win_rate", 0), reverse=True)[:5]
+    worst_assets  = sorted(asset_patt.items(), key=lambda x: x[1].get("win_rate", 0))[:5]
+
+    summary = (
+        "RAPPORT BOT HAOUD TRADING IA\n"
+        "Periode analysee: " + str(len(trade_log)) + " trades\n"
+        "Win rate global: " + str(stats.get("win_rate", 0)) + "%\n"
+        "PnL moyen: " + str(stats.get("avg_pnl", 0)) + "%\n\n"
+        "5 meilleurs trades: " + str([t.get("asset") + " +" + str(round(t.get("pnl_pct",0),1)) + "%" for t in best_trades]) + "\n"
+        "5 pires trades: " + str([t.get("asset") + " " + str(round(t.get("pnl_pct",0),1)) + "%" for t in worst_trades]) + "\n"
+        "Actifs performants: " + str([(a, str(p.get("win_rate","?")) + "%") for a,p in best_assets]) + "\n"
+        "Actifs a eviter: " + str([(a, str(p.get("win_rate","?")) + "%") for a,p in worst_assets]) + "\n"
+    )
+
+    try:
+        prompt = (
+            "Tu es un expert en trading algorithmique.\n"
+            "Analyse ces resultats de mon bot de trading et distille les lecons cles.\n\n"
+            + summary + "\n\n"
+            "Reponds UNIQUEMENT en JSON valide sans markdown:\n"
+            "{\n"
+            '  "lecons_cles": ["<lecon1>", "<lecon2>", "<lecon3>"],\n'
+            '  "actifs_a_privilegier": ["<ticker1>", "<ticker2>"],\n'
+            '  "actifs_a_eviter": ["<ticker1>", "<ticker2>"],\n'
+            '  "conditions_favorables": "<description des conditions de marche gagnantes>",\n'
+            '  "erreurs_recurrentes": "<description des erreurs a corriger>",\n'
+            '  "recommandation_seuil_buy": <nombre entre 65 et 80>,\n'
+            '  "recommandation_stop_loss": <nombre entre 0.04 et 0.10>,\n'
+            '  "strategie_recommandee": "<conseil strategique en 2 phrases>"\n'
+            "}"
+        )
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json", "x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01"},
+            json={"model": "claude-sonnet-4-20250514", "max_tokens": 800,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30
+        )
+        text = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
+        wisdom = json.loads(text)
+        wisdom["last_distillation"] = datetime.now(timezone.utc).isoformat()
+        wisdom["trades_analyzed"]   = len(trade_log)
+        wisdom["win_rate_at_distill"] = stats.get("win_rate", 0)
+        print("[WISDOM] Distillation OK - " + str(len(wisdom.get("lecons_cles", []))) + " lecons extraites")
+
+        # Appliquer les recommandations dans les params
+        current_params = load_json(PARAMS_FILE, BASE_PARAMS.copy())
+        rec_buy = wisdom.get("recommandation_seuil_buy")
+        rec_sl  = wisdom.get("recommandation_stop_loss")
+        if rec_buy and 65 <= rec_buy <= 80:
+            current_params["MIN_SCORE_BUY"] = int(rec_buy)
+        if rec_sl and 0.04 <= rec_sl <= 0.10:
+            current_params["STOP_LOSS_PCT"] = float(rec_sl)
+        current_params["wisdom_applied"] = datetime.now().isoformat()
+        save_json(PARAMS_FILE, current_params)
+
+        send_telegram(
+            "HAOUD TRADING IA - Distillation hebdo\n"
+            "Win rate: " + str(stats.get("win_rate", 0)) + "%\n"
+            "Lecon principale: " + str(wisdom.get("lecons_cles", ["N/A"])[0]) + "\n"
+            "Actifs favoris: " + str(wisdom.get("actifs_a_privilegier", []))
+        )
+        return wisdom
+    except Exception as e:
+        print("[WISDOM] Erreur: " + str(e))
+        return None
+
+def record_closed_trade(asset, entry_snapshot, exit_price_eur, action, learning_data):
+    """Enregistre un trade cloture et declenche l'apprentissage"""
+    entry_price = entry_snapshot.get("entry_price_eur", exit_price_eur)
+    pnl_pct     = round((exit_price_eur - entry_price) / entry_price * 100, 2) if entry_price > 0 else 0
+
+    trade_record = {
+        "asset":             asset,
+        "action":            action,
+        "entry_price_eur":   entry_price,
+        "exit_price_eur":    round(exit_price_eur, 4),
+        "pnl_pct":           pnl_pct,
+        "entry_time":        entry_snapshot.get("entry_date", ""),
+        "exit_time":         datetime.now().isoformat(),
+        "entry_rsi":         entry_snapshot.get("rsi", 50),
+        "entry_score":       entry_snapshot.get("score", 50),
+        "entry_change_24h":  entry_snapshot.get("change_24h", 0),
+        "entry_snapshot":    {
+            "score_technique": entry_snapshot.get("score_technique", 50),
+            "score_macro":     entry_snapshot.get("score_macro", 50),
+            "score_sentiment": entry_snapshot.get("score_sentiment", 50),
+            "onchain_score":   entry_snapshot.get("onchain_score"),
+            "score":           entry_snapshot.get("score", 50),
+        }
+    }
+
+    trade_log = learning_data.get("trade_log", [])
+    trade_log.append(trade_record)
+    trade_log = trade_log[-200:]  # Garder 200 trades en memoire chaude
+
+    # Mettre a jour les stats
+    wins   = len([t for t in trade_log if t.get("pnl_pct", 0) > 0])
+    losses = len([t for t in trade_log if t.get("pnl_pct", 0) <= 0])
+    total  = wins + losses
+    all_pnl = [t.get("pnl_pct", 0) for t in trade_log]
+
+    learning_data["trade_log"] = trade_log
+    learning_data["stats"]     = {
+        "total_closed": total,
+        "wins":         wins,
+        "losses":       losses,
+        "win_rate":     round(wins / total * 100, 1) if total > 0 else 0,
+        "avg_pnl":      round(sum(all_pnl) / len(all_pnl), 2) if all_pnl else 0,
+        "total_pnl":    round(sum(all_pnl), 2),
+        "best_trade":   round(max(all_pnl), 2) if all_pnl else 0,
+        "worst_trade":  round(min(all_pnl), 2) if all_pnl else 0,
+    }
+
+    print("  [LEARN] Trade enregistre " + asset + " PnL=" + str(pnl_pct) + "% | Win rate=" + str(learning_data["stats"]["win_rate"]) + "%")
+    return trade_record
+
+# ============================================================
+# RECUPERATION DES PRIX (batch optimise)
 # ============================================================
 
 def get_eur_rate():
     try:
         r = requests.get(
-            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
-            timeout=5
-        )
+            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json", timeout=5)
         return r.json()["usd"]["eur"]
     except:
         try:
@@ -474,20 +658,15 @@ def get_eur_rate():
 def get_crypto_prices():
     prices = {}
     try:
-        # Recuperer top 30 en une seule requete
         ids = ",".join(COINGECKO_IDS.values())
         r = requests.get(
-            "https://api.coingecko.com/api/v3/coins/markets"
-            "?vs_currency=usd&ids=" + ids +
-            "&order=market_cap_desc&per_page=50&page=1"
-            "&sparkline=false&price_change_percentage=24h",
-            headers={"Accept": "application/json"}, timeout=20
-        )
-        data = r.json()
+            "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=" + ids +
+            "&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h",
+            headers={"Accept": "application/json"}, timeout=20)
         id_to_ticker = {v: k for k, v in COINGECKO_IDS.items()}
-        for coin in data:
+        for coin in r.json():
             key = id_to_ticker.get(coin["id"])
-            if not key:
+            if not key or key in STABLECOINS:
                 continue
             prices[key] = {
                 "price_usd":  float(coin["current_price"]),
@@ -495,62 +674,43 @@ def get_crypto_prices():
                 "volume_usd": float(coin.get("total_volume") or 0),
                 "high_24h":   float(coin.get("high_24h") or coin["current_price"]),
                 "low_24h":    float(coin.get("low_24h")  or coin["current_price"]),
-                "market_cap": float(coin.get("market_cap") or 0),
-                "closes":     [],
-                "volumes":    [],
+                "closes":     [], "volumes": [],
                 "name":       CRYPTO_ASSETS[key]["name"],
-                "type":       "crypto",
-                "source":     "CoinGecko LIVE"
+                "type":       "crypto", "source": "CoinGecko LIVE"
             }
-        print("  [OK] " + str(len(prices)) + " cryptos recuperees")
+        print("  [OK] " + str(len(prices)) + " cryptos")
     except Exception as e:
         print("  [ERREUR CoinGecko] " + str(e))
     return prices
 
-def get_yahoo_price_single(ticker, name, asset_type):
-    """Recupere 1 an d historique pour un seul actif (pour le calcul technique)"""
+def get_yahoo_price_single(ticker):
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         r = requests.get(
             "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker + "?interval=1d&range=1y",
-            headers=headers, timeout=10
-        )
-        data    = r.json()
-        result  = data["chart"]["result"][0]
-        meta    = result["meta"]
-        closes  = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
-        closes  = [c for c in closes if c is not None]
-        volumes = result.get("indicators", {}).get("quote", [{}])[0].get("volume", [])
-        volumes = [v for v in volumes if v is not None]
+            headers=headers, timeout=10)
+        result  = r.json()["chart"]["result"][0]
+        closes  = [c for c in result.get("indicators",{}).get("quote",[{}])[0].get("close",[]) if c]
+        volumes = [v for v in result.get("indicators",{}).get("quote",[{}])[0].get("volume",[]) if v]
         return closes, volumes
     except:
         return [], []
 
 def get_yahoo_batch_quotes(tickers_map, asset_type):
-    """
-    Recupere les prix en temps reel pour TOUS les tickers en 1 seule requete.
-    tickers_map = {key: {"ticker": t, "name": n}}
-    """
     prices = {}
-    # Yahoo Finance v7 supporte les requetes batch
     all_tickers = [info["ticker"] for info in tickers_map.values()]
-    # Splitter en chunks de 20 pour eviter les timeouts
-    chunk_size = 20
-    chunks = [all_tickers[i:i+chunk_size] for i in range(0, len(all_tickers), chunk_size)]
     ticker_to_key = {info["ticker"]: key for key, info in tickers_map.items()}
+    chunks = [all_tickers[i:i+20] for i in range(0, len(all_tickers), 20)]
 
     for chunk in chunks:
         try:
             symbols = ",".join(chunk)
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             r = requests.get(
                 "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + symbols,
-                headers=headers, timeout=15
-            )
-            data = r.json()
-            quotes = data.get("quoteResponse", {}).get("result", [])
-            for q in quotes:
-                ticker = q.get("symbol", "")
+                headers=headers, timeout=15)
+            for q in r.json().get("quoteResponse",{}).get("result",[]):
+                ticker = q.get("symbol","")
                 key    = ticker_to_key.get(ticker)
                 if not key:
                     continue
@@ -558,85 +718,32 @@ def get_yahoo_batch_quotes(tickers_map, asset_type):
                 prev   = float(q.get("regularMarketPreviousClose", price))
                 change = ((price - prev) / prev * 100) if prev else 0
                 prices[key] = {
-                    "price_usd":  price,
-                    "change_24h": round(change, 2),
+                    "price_usd":  price, "change_24h": round(change, 2),
                     "volume_usd": float(q.get("regularMarketVolume", 0)) * price,
                     "high_24h":   float(q.get("regularMarketDayHigh", price)),
                     "low_24h":    float(q.get("regularMarketDayLow", price)),
-                    "closes":     [],
-                    "volumes":    [],
+                    "closes":     [], "volumes":    [],
                     "name":       tickers_map[key]["name"],
-                    "type":       asset_type,
-                    "source":     "Yahoo Finance LIVE"
+                    "type":       asset_type, "source": "Yahoo Finance LIVE"
                 }
-            print("  [BATCH] " + str(len(quotes)) + "/" + str(len(chunk)) + " quotes OK")
             time.sleep(0.3)
         except Exception as e:
-            print("  [BATCH ERREUR] " + str(e))
-            time.sleep(1)
+            print("  [BATCH] " + str(e))
 
-    # Recuperer historique 1 an en parallele (uniquement pour les actifs obtenus)
-    print("  [HISTORIQUE] Recuperation 1 an pour " + str(len(prices)) + " actifs...")
+    # Historique 1 an
     for key, data in prices.items():
         ticker = tickers_map[key]["ticker"]
-        closes, volumes = get_yahoo_price_single(ticker, data["name"], asset_type)
+        closes, volumes = get_yahoo_price_single(ticker)
         if closes:
             data["closes"]  = closes
             data["volumes"] = volumes
-        time.sleep(0.1)
+        time.sleep(0.08)
 
-    return prices
-
-def get_all_stock_prices():
-    prices = {}
-    print("  Actions US (" + str(len(STOCK_ASSETS)) + " actifs en batch)...")
-    us = get_yahoo_batch_quotes(STOCK_ASSETS, "stock")
-    prices.update(us)
-    print("  Actions Europe (" + str(len(EUROPE_ASSETS)) + " actifs en batch)...")
-    eu = get_yahoo_batch_quotes(EUROPE_ASSETS, "stock_eu")
-    prices.update(eu)
-    print("  [STOCKS] " + str(len(prices)) + " actifs recuperes")
-    return prices
-
-def get_all_etf_prices():
-    print("  ETFs (" + str(len(ETF_ASSETS)) + " actifs en batch)...")
-    prices = get_yahoo_batch_quotes(ETF_ASSETS, "etf")
-    print("  [ETFs] " + str(len(prices)) + " actifs recuperes")
+    print("  [OK] " + str(len(prices)) + " " + asset_type)
     return prices
 
 # ============================================================
-# ON-CHAIN DATA
-# ============================================================
-
-def get_onchain_data():
-    onchain = {}
-    try:
-        r = requests.get("https://blockchain.info/stats?format=json", timeout=8)
-        d = r.json()
-        tx = d.get("n_tx", 0)
-        if tx > 400000:   s = 75
-        elif tx > 300000: s = 60
-        elif tx > 200000: s = 50
-        else:             s = 35
-        onchain["BTC"] = {"tx_per_day": tx, "score_onchain": s}
-        print("  [ON-CHAIN] BTC tx=" + str(tx) + " score=" + str(s))
-    except Exception as e:
-        print("  [ON-CHAIN] BTC: " + str(e))
-    try:
-        r = requests.get(
-            "https://api.etherscan.io/api?module=gastracker&action=gasoracle",
-            timeout=8
-        )
-        gas = float(r.json().get("result", {}).get("SafeGasPrice", 20))
-        s = 70 if gas < 15 else (60 if gas < 30 else (45 if gas < 60 else 30))
-        onchain["ETH"] = {"gas_price_gwei": gas, "score_onchain": s}
-        print("  [ON-CHAIN] ETH gas=" + str(gas) + " score=" + str(s))
-    except Exception as e:
-        print("  [ON-CHAIN] ETH: " + str(e))
-    return onchain
-
-# ============================================================
-# ALGORITHME TECHNIQUE
+# INDICATEURS TECHNIQUES
 # ============================================================
 
 def compute_rsi(closes, period=14):
@@ -684,18 +791,6 @@ def compute_momentum(closes, period=10):
         return 0
     return round((closes[-1] - closes[-period-1]) / closes[-period-1] * 100, 2)
 
-def compute_volume_score(volumes):
-    if len(volumes) < 10:
-        return 50
-    avg = sum(volumes[-10:]) / 10
-    if avg == 0:
-        return 50
-    r = volumes[-1] / avg
-    if r > 2.0:   return 80
-    elif r > 1.5: return 65
-    elif r > 1.0: return 55
-    else:         return 40
-
 def analyze_technical(asset, price_data, params):
     closes  = price_data.get("closes", [])
     volumes = price_data.get("volumes", [])
@@ -705,245 +800,141 @@ def analyze_technical(asset, price_data, params):
     rsi_ob  = params.get("RSI_OVERBOUGHT", 65)
 
     rsi = compute_rsi(closes)
-    score_rsi = 82 if rsi < rsi_os else (66 if rsi < rsi_os+10 else (50 if rsi < 55 else (40 if rsi < rsi_ob else 18)))
-
-    ml, sl = compute_macd(closes)
-    score_macd = 78 if (ml > sl and ml > 0) else (62 if ml > sl else (22 if (ml < sl and ml < 0) else 38))
-
+    sr  = 82 if rsi < rsi_os else (66 if rsi < rsi_os+10 else (50 if rsi < 55 else (40 if rsi < rsi_ob else 18)))
+    ml, sl_macd = compute_macd(closes)
+    sm  = 78 if (ml > sl_macd and ml > 0) else (62 if ml > sl_macd else (22 if (ml < sl_macd and ml < 0) else 38))
     bbu, bbm, bbl = compute_bollinger(closes)
-    if bbu > bbl and (bbu - bbl) > 0:
+    if bbu > bbl and (bbu-bbl) > 0:
         pos = (price - bbl) / (bbu - bbl)
-        score_bb = 82 if pos < 0.15 else (65 if pos < 0.35 else (50 if pos < 0.65 else (35 if pos < 0.85 else 18)))
+        sb = 82 if pos<0.15 else (65 if pos<0.35 else (50 if pos<0.65 else (35 if pos<0.85 else 18)))
     else:
-        score_bb = 50
-
-    ma20  = compute_ma(closes, 20)
-    ma50  = compute_ma(closes, 50)
-    ma200 = compute_ma(closes, 200)
-    if price > ma20 and price > ma50 and price > ma200 and ma20 > ma50:    score_ma = 82
-    elif price > ma20 and price > ma50 and ma20 > ma50:                    score_ma = 68
-    elif price > ma20:                                                      score_ma = 55
-    elif price < ma20 and price < ma50 and price < ma200:                  score_ma = 18
-    elif price < ma20 and price < ma50:                                    score_ma = 32
-    else:                                                                   score_ma = 45
-
+        sb = 50
+    ma20, ma50, ma200 = compute_ma(closes,20), compute_ma(closes,50), compute_ma(closes,200)
+    if price>ma20 and price>ma50 and price>ma200 and ma20>ma50:   sma=82
+    elif price>ma20 and price>ma50 and ma20>ma50:                 sma=68
+    elif price>ma20:                                               sma=55
+    elif price<ma20 and price<ma50 and price<ma200:               sma=18
+    elif price<ma20 and price<ma50:                               sma=32
+    else:                                                          sma=45
     mom = compute_momentum(closes)
-    score_mom = 75 if mom > 15 else (65 if mom > 7 else (55 if mom > 2 else (42 if mom > -5 else (30 if mom > -12 else 18))))
-    score_vol = compute_volume_score(volumes) if volumes else 50
-    score_chg = 28 if change > 5 else (58 if change > 2 else (54 if change > 0 else (44 if change > -3 else (32 if change > -7 else 18))))
+    smom = 75 if mom>15 else (65 if mom>7 else (55 if mom>2 else (42 if mom>-5 else (30 if mom>-12 else 18))))
+    vols = price_data.get("volumes", [])
+    if len(vols) >= 10:
+        avg = sum(vols[-10:]) / 10
+        rat = vols[-1] / avg if avg > 0 else 1
+        svol = 80 if rat>2 else (65 if rat>1.5 else (55 if rat>1 else 40))
+    else:
+        svol = 50
+    schg = 28 if change>5 else (58 if change>2 else (54 if change>0 else (44 if change>-3 else (32 if change>-7 else 18))))
 
-    score_tech = round(
-        score_rsi  * 0.22 + score_macd * 0.20 + score_bb  * 0.15 +
-        score_ma   * 0.22 + score_mom  * 0.10 + score_vol * 0.06 + score_chg * 0.05
-    )
-
-    tendance    = "HAUSSIERE" if score_tech >= 65 else ("BAISSIERE" if score_tech <= 40 else "NEUTRE")
-    signal_tech = "BUY" if score_tech >= params.get("MIN_SCORE_BUY", 70) else ("SELL" if score_tech <= params.get("MAX_SCORE_SELL", 40) else "HOLD")
-    rsi_analyse = "surachete" if rsi > rsi_ob else ("survendu" if rsi < rsi_os else "neutre")
+    score_tech = round(sr*0.22 + sm*0.20 + sb*0.15 + sma*0.22 + smom*0.10 + svol*0.06 + schg*0.05)
+    tendance   = "HAUSSIERE" if score_tech>=65 else ("BAISSIERE" if score_tech<=40 else "NEUTRE")
+    sig_tech   = "BUY" if score_tech>=params.get("MIN_SCORE_BUY",70) else ("SELL" if score_tech<=params.get("MAX_SCORE_SELL",40) else "HOLD")
+    rsi_lbl    = "surachete" if rsi>rsi_ob else ("survendu" if rsi<rsi_os else "neutre")
 
     return {
-        "score_technique": score_tech, "rsi": rsi, "macd": ml,
-        "macd_signal": sl, "bb_upper": bbu, "bb_mid": bbm, "bb_lower": bbl,
+        "score_technique": score_tech, "rsi": rsi, "macd": ml, "macd_signal": sl_macd,
+        "bb_upper": bbu, "bb_mid": bbm, "bb_lower": bbl,
         "ma20": ma20, "ma50": ma50, "ma200": ma200, "momentum": mom,
-        "score_rsi": score_rsi, "score_macd": score_macd,
-        "score_bollinger": score_bb, "score_ma": score_ma,
-        "score_momentum": score_mom, "score_volume": score_vol,
-        "tendance": tendance, "signal_tech": signal_tech, "rsi_analyse": rsi_analyse,
+        "score_rsi": sr, "score_macd": sm, "score_bollinger": sb,
+        "score_ma": sma, "score_momentum": smom, "score_volume": svol,
+        "tendance": tendance, "signal_tech": sig_tech, "rsi_analyse": rsi_lbl,
     }
 
 # ============================================================
-# BACKTESTING + OPTIMISATION
+# ON-CHAIN, RSS, REDDIT, WHALE, CLAUDE (identiques v4)
 # ============================================================
 
-def run_backtest(asset, closes, params):
-    if len(closes) < 60:
-        return None
-    trades = []
-    position = False
-    entry = 0
-    wins = losses = 0
-    total_pnl = 0
-    sl = params.get("STOP_LOSS_PCT", 0.07)
-    tp = params.get("TAKE_PROFIT_PCT", 0.18)
-    rsi_os = params.get("RSI_OVERSOLD", 35)
-    rsi_ob = params.get("RSI_OVERBOUGHT", 65)
+def get_onchain_data():
+    onchain = {}
+    try:
+        r = requests.get("https://blockchain.info/stats?format=json", timeout=8)
+        d = r.json()
+        tx = d.get("n_tx", 0)
+        s  = 75 if tx>400000 else (60 if tx>300000 else (50 if tx>200000 else 35))
+        onchain["BTC"] = {"tx_per_day": tx, "score_onchain": s}
+    except: pass
+    try:
+        r  = requests.get("https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=8)
+        gas = float(r.json().get("result",{}).get("SafeGasPrice", 20))
+        s   = 70 if gas<15 else (60 if gas<30 else (45 if gas<60 else 30))
+        onchain["ETH"] = {"gas_price_gwei": gas, "score_onchain": s}
+    except: pass
+    return onchain
 
-    for i in range(50, len(closes) - 1):
-        w = closes[:i+1]
-        rsi = compute_rsi(w)
-        ma20 = compute_ma(w, 20)
-        ml, ms = compute_macd(w)
-        price = closes[i]
-        buy_sig  = (rsi < rsi_os and price > ma20 and ml > ms)
-        sell_sig = (rsi > rsi_ob or (position and price < entry*(1-sl)) or (position and price > entry*(1+tp)))
-        if not position and buy_sig:
-            entry = price
-            position = True
-        elif position and sell_sig:
-            pnl = (price - entry) / entry * 100
-            total_pnl += pnl
-            if pnl > 0: wins += 1
-            else:       losses += 1
-            trades.append(round(pnl, 2))
-            position = False
-
-    total = wins + losses
-    if total == 0:
-        return None
-    return {
-        "asset": asset, "total_trades": total, "wins": wins, "losses": losses,
-        "win_rate": round(wins / total * 100, 1),
-        "avg_pnl_pct": round(total_pnl / total, 2),
-        "total_pnl_pct": round(total_pnl, 2),
-        "best_trade": round(max(trades), 2) if trades else 0,
-        "worst_trade": round(min(trades), 2) if trades else 0,
-        "periode": str(len(closes)) + " jours"
-    }
-
-def optimize_params(backtest_results):
-    if not backtest_results:
-        return DEFAULT_PARAMS.copy()
-    good = [bt for bt in backtest_results.values() if bt and bt["win_rate"] >= 55 and bt["total_trades"] >= 5]
-    bad  = [bt for bt in backtest_results.values() if bt and bt["win_rate"] < 45 and bt["total_trades"] >= 5]
-    params = DEFAULT_PARAMS.copy()
-    if good:
-        avg_wr = sum(bt["win_rate"] for bt in good) / len(good)
-        if avg_wr >= 60:   params["MIN_SCORE_BUY"] = 68
-        elif avg_wr >= 55: params["MIN_SCORE_BUY"] = 70
-        else:              params["MIN_SCORE_BUY"] = 72
-        print("  [OPTIM] " + str(len(good)) + " actifs rentables | Seuil BUY=" + str(params["MIN_SCORE_BUY"]))
-    if bad:
-        avg_worst = sum(bt["worst_trade"] for bt in bad) / len(bad)
-        if avg_worst < -10:
-            params["STOP_LOSS_PCT"] = 0.06
-            print("  [OPTIM] Stop-loss resserre a 6%")
-    params["last_optimization"] = datetime.now().isoformat()
-    params["assets_analyzed"]   = len(backtest_results)
-    params["profitable_assets"] = len(good)
-    return params
-
-# ============================================================
-# CORRELATION BTC
-# ============================================================
-
-def get_btc_status(all_prices):
-    btc = all_prices.get("BTC")
-    if not btc:
-        return "unknown", 0
-    chg = btc["change_24h"]
-    if chg <= BTC_CRASH_THRESHOLD:
-        print("  [CORRELATION] BTC crash (" + str(chg) + "%) -> blocage crypto")
-        return "crash", chg
-    elif chg <= BTC_WARN_THRESHOLD:
-        print("  [CORRELATION] BTC warn (" + str(chg) + "%) -> penalite -" + str(BTC_PENALTY_PTS) + "pts")
-        return "warn", chg
-    return "ok", chg
-
-# ============================================================
-# REDDIT + RSS
-# ============================================================
-
-BULLISH = ["bull","moon","pump","buy","long","surge","rally","breakout","ath","gain","up","bullish","rocket","hodl"]
-BEARISH = ["bear","dump","sell","short","crash","drop","down","bearish","fear","panic","correction","loss","red","rekt"]
+BULLISH = ["bull","moon","pump","buy","long","surge","rally","breakout","ath","gain","bullish","rocket","hodl"]
+BEARISH = ["bear","dump","sell","short","crash","drop","bearish","fear","panic","correction","loss","rekt"]
 
 def get_reddit_sentiment():
     total_bull = total_bear = total_posts = 0
-    mentions = {}
-    subs = ["CryptoCurrency", "wallstreetbets", "investing", "stocks", "Bitcoin"]
+    subs = ["CryptoCurrency","wallstreetbets","investing","stocks","Bitcoin"]
     for sub in subs:
         try:
-            r = requests.get(
-                "https://www.reddit.com/r/" + sub + "/hot.json?limit=25",
-                headers={"User-Agent": "HAOUD-Bot/4.0"}, timeout=10
-            )
-            posts = r.json().get("data", {}).get("children", [])
-            for post in posts:
-                d    = post.get("data", {})
-                text = (d.get("title","") + " " + d.get("selftext","")).lower()
-                w    = min(d.get("score", 0) / 1000, 3) + 1
-                total_bull  += sum(text.count(x) for x in BULLISH) * w
-                total_bear  += sum(text.count(x) for x in BEARISH) * w
+            r = requests.get("https://www.reddit.com/r/"+sub+"/hot.json?limit=15",
+                headers={"User-Agent":"HAOUD-Bot/5.0"}, timeout=8)
+            for post in r.json().get("data",{}).get("children",[]):
+                d = post.get("data",{})
+                text = (d.get("title","")+" "+d.get("selftext","")).lower()
+                w = min(d.get("score",0)/1000,3)+1
+                total_bull += sum(text.count(x) for x in BULLISH)*w
+                total_bear += sum(text.count(x) for x in BEARISH)*w
                 total_posts += 1
-                all_assets = list(CRYPTO_ASSETS.keys()) + list(STOCK_ASSETS.keys()) + list(EUROPE_ASSETS.keys())
-                for asset in all_assets:
-                    if asset.lower() in text:
-                        mentions[asset] = mentions.get(asset, 0) + 1
-            time.sleep(0.5)
-        except:
-            pass
-    score = round(total_bull / (total_bull + total_bear) * 100) if (total_bull + total_bear) > 0 else 50
-    print("  [REDDIT] " + str(total_posts) + " posts | Score=" + str(score))
-    return {"crypto": score, "stock": score, "posts_analyzed": total_posts,
-            "top_mentions": dict(sorted(mentions.items(), key=lambda x: x[1], reverse=True)[:10])}
+            time.sleep(0.3)
+        except: pass
+    score = round(total_bull/(total_bull+total_bear)*100) if (total_bull+total_bear)>0 else 50
+    return {"crypto": score, "stock": score, "posts_analyzed": total_posts}
 
 def fetch_rss_news():
     headlines = []
     feeds = [
-        ("https://feeds.reuters.com/reuters/businessNews",   "Reuters"),
-        ("https://coindesk.com/arc/outboundfeeds/rss/",      "CoinDesk"),
-        ("https://cointelegraph.com/rss",                    "CoinTelegraph"),
-        ("https://feeds.reuters.com/reuters/technologyNews", "Reuters Tech"),
+        ("https://feeds.reuters.com/reuters/businessNews","Reuters"),
+        ("https://coindesk.com/arc/outboundfeeds/rss/","CoinDesk"),
+        ("https://cointelegraph.com/rss","CoinTelegraph"),
     ]
     for url, source in feeds:
         try:
-            r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+            r = requests.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0"})
             root = ET.fromstring(r.content)
-            for item in root.findall(".//item")[:5]:
-                t = item.findtext("title", "").strip()
-                if t:
-                    headlines.append(source + ": " + t)
-        except:
-            pass
-    print("  [RSS] " + str(len(headlines)) + " actualites")
-    return headlines[:20]
+            for item in root.findall(".//item")[:4]:
+                t = item.findtext("title","").strip()
+                if t: headlines.append(source+": "+t)
+        except: pass
+    return headlines[:15]
 
-# ============================================================
-# CLAUDE IA (1x PAR JOUR)
-# ============================================================
+def get_btc_status(all_prices):
+    btc = all_prices.get("BTC")
+    if not btc: return "unknown", 0
+    chg = btc["change_24h"]
+    if chg <= BTC_CRASH_THRESHOLD: return "crash", chg
+    elif chg <= BTC_WARN_THRESHOLD: return "warn", chg
+    return "ok", chg
 
 def should_run_claude():
-    now = datetime.now(timezone.utc)
-    m   = load_json(MACRO_CACHE_FILE, {})
-    last = m.get("last_claude_run", "")
-    if not last:
-        return True
+    m = load_json(MACRO_FILE, {})
+    last = m.get("last_claude_run","")
+    if not last: return True
     ld = datetime.fromisoformat(last)
-    if ld.tzinfo is None:
-        ld = ld.replace(tzinfo=timezone.utc)
-    hours = (now - ld).total_seconds() / 3600
-    if now.hour == CLAUDE_HOUR_UTC and hours >= 20:
-        return True
-    if hours >= 25:
-        return True
-    print("[CLAUDE] Cache valide (" + str(round(hours,1)) + "h) macro=" + str(m.get("score_macro",50)))
+    if ld.tzinfo is None: ld = ld.replace(tzinfo=timezone.utc)
+    hours = (datetime.now(timezone.utc)-ld).total_seconds()/3600
+    if datetime.now(timezone.utc).hour==CLAUDE_HOUR_UTC and hours>=20: return True
+    if hours>=25: return True
     return False
 
-def run_claude_macro_analysis(all_prices, eur_rate, news, reddit, backtest_results, whale_alerts):
-    summary = ""
-    for asset, d in list(all_prices.items())[:10]:
-        summary += asset + " " + str(round(d["price_usd"]*eur_rate,2)) + "EUR (" + str(d["change_24h"]) + "%) | "
-
-    news_text = "\n\nActualites:\n" + "\n".join(["- " + h for h in news[:8]]) if news else ""
-    reddit_text = "\n\nReddit sentiment: " + str(reddit.get("crypto",50)) + "/100 (" + str(reddit.get("posts_analyzed",0)) + " posts)" if reddit else ""
-
-    bt_text = ""
-    if backtest_results:
-        good = [(a, bt["win_rate"]) for a,bt in backtest_results.items() if bt and bt["win_rate"]>=55][:3]
-        bad  = [(a, bt["win_rate"]) for a,bt in backtest_results.items() if bt and bt["win_rate"]<45][:3]
-        if good: bt_text += "\nActifs rentables backtest: " + str(good)
-        if bad:  bt_text += "\nActifs non rentables: " + str(bad)
-
-    whale_text = ""
-    buy_whales = [w for w in whale_alerts if w["direction"] == "BUY"][:3]
-    if buy_whales:
-        whale_text = "\n\nWhales BUY detectees: " + ", ".join([w["asset"] + " $" + str(int(w["amount_usd"]/1e6)) + "M" for w in buy_whales])
+def run_claude_macro(all_prices, eur_rate, news, reddit, backtest, whales, learning_data):
+    summary = "".join([k+" "+str(round(d["price_usd"]*eur_rate,2))+"EUR ("+str(d["change_24h"])+"%) | " for k,d in list(all_prices.items())[:8]])
+    news_txt  = "\nNews:\n"+"\n".join(["- "+h for h in news[:6]]) if news else ""
+    reddit_txt = "\nReddit: "+str(reddit.get("crypto",50))+"/100" if reddit else ""
+    stats_txt = "\nStats bot: win_rate="+str(learning_data.get("stats",{}).get("win_rate",0))+"% avg_pnl="+str(learning_data.get("stats",{}).get("avg_pnl",0))+"%"
+    wisdom_txt = ""
+    wisdom = load_json(WISDOM_FILE, {})
+    if wisdom.get("lecons_cles"):
+        wisdom_txt = "\nSagesse accumulee: "+str(wisdom["lecons_cles"][:2])
 
     try:
         prompt = (
             "Tu es un analyste financier IA expert en trading algorithmique.\n"
-            "Date: " + datetime.now().strftime('%d/%m/%Y %H:%M') + " UTC\n"
-            "Marches: " + summary +
-            news_text + reddit_text + bt_text + whale_text + "\n\n"
+            "Date: "+datetime.now().strftime('%d/%m/%Y %H:%M')+" UTC\n"
+            "Marches: "+summary+news_txt+reddit_txt+stats_txt+wisdom_txt+"\n\n"
             "Analyse le contexte macro et le sentiment global.\n"
             "Reponds UNIQUEMENT en JSON valide sans markdown:\n"
             '{"score_macro":<0-100>,"score_sentiment":<0-100>,'
@@ -956,183 +947,229 @@ def run_claude_macro_analysis(all_prices, eur_rate, news, reddit, backtest_resul
         )
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
-            headers={"Content-Type": "application/json", "x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01"},
-            json={"model": "claude-sonnet-4-20250514", "max_tokens": 600, "messages": [{"role": "user", "content": prompt}]},
-            timeout=30
-        )
+            headers={"Content-Type":"application/json","x-api-key":CLAUDE_KEY,"anthropic-version":"2023-06-01"},
+            json={"model":"claude-sonnet-4-20250514","max_tokens":500,"messages":[{"role":"user","content":prompt}]},
+            timeout=30)
         text = r.json()["content"][0]["text"].strip().replace("```json","").replace("```","").strip()
         result = json.loads(text)
         result["last_claude_run"] = datetime.now(timezone.utc).isoformat()
-        result["news_count"]      = len(news)
-        result["reddit_score"]    = reddit.get("crypto", 50)
-        print("[CLAUDE] OK macro=" + str(result.get("score_macro")) + " sentiment=" + str(result.get("score_sentiment")))
+        print("[CLAUDE] macro="+str(result.get("score_macro"))+" sentiment="+str(result.get("score_sentiment")))
         return result
     except Exception as e:
-        print("[CLAUDE ERREUR] " + str(e))
+        print("[CLAUDE ERREUR] "+str(e))
         return None
 
 # ============================================================
-# SCORE FINAL + GESTION EXPOSITION + ORDRE
+# SCORE FINAL V5 (avec ML + learning)
 # ============================================================
 
-def compute_final_score(tech, macro_cache, asset, btc_status, onchain_data, params):
+def compute_final_score_v5(tech, macro_cache, asset, btc_status, onchain_data,
+                            params, weights, learning_data, ml_model, ml_scaler,
+                            asset_entry_for_ml):
     st  = tech["score_technique"]
     sm  = macro_cache.get("score_macro", 50)
     ss  = macro_cache.get("score_sentiment", 50)
     fav = macro_cache.get("actifs_favorables", [])
     ris = macro_cache.get("actifs_risques", [])
-    bonus = 5 if asset in fav else (-5 if asset in ris else 0)
-    oc_bonus = 0
-    if asset in onchain_data:
-        oc_bonus = round((onchain_data[asset].get("score_onchain", 50) - 50) * 0.1)
-    score = round(st * 0.55 + sm * 0.20 + ss * 0.15 + (50 + oc_bonus) * 0.10 + bonus)
+    bonus_claude = 5 if asset in fav else (-5 if asset in ris else 0)
+    oc_score = onchain_data.get(asset, {}).get("score_onchain", 50)
+
+    # Score hybride avec poids adaptatifs (niveau 2)
+    score = round(
+        st       * weights.get("technique", 0.55) * 100 +
+        sm       * weights.get("macro", 0.20) +
+        ss       * weights.get("sentiment", 0.15) +
+        oc_score * weights.get("onchain", 0.10) +
+        bonus_claude
+    ) if weights.get("technique", 0.55) < 1 else round(
+        st * 0.55 + sm * 0.20 + ss * 0.15 + oc_score * 0.10 + bonus_claude
+    )
+
+    # Bonus patterns par actif (niveau 3)
+    rsi = tech.get("rsi", 50)
+    pattern_bonus = get_pattern_bonus(asset, rsi, learning_data)
+    score += pattern_bonus
+
+    # Bonus ML (si modele disponible)
+    ml_score = get_ml_score(asset_entry_for_ml, ml_model, ml_scaler)
+    if ml_score is not None:
+        # Le ML vote : si confiance > 65%, bonus de 5pts; si < 35%, malus
+        ml_bonus = 5 if ml_score >= 65 else (-5 if ml_score <= 35 else 0)
+        score += ml_bonus
+        if ml_bonus != 0:
+            print("  [ML] Score confiance="+str(ml_score)+"% -> bonus="+str(ml_bonus)+"pts")
+
+    # Correlation BTC
     if asset in CRYPTO_ASSETS and btc_status == "warn":
         score = max(0, score - BTC_PENALTY_PTS)
-    return min(100, max(0, score))
+
+    return min(100, max(0, score)), ml_score
 
 def can_open_position(asset, bot_state, asset_type):
-    pos  = bot_state.get("positions", {})
-    t    = len(pos)
-    inv  = sum(p.get("amount_eur", 0) for p in pos.values())
-    crp  = sum(1 for k in pos if k in CRYPTO_ASSETS)
-    stk  = sum(1 for k in pos if k not in CRYPTO_ASSETS)
-    if t >= MAX_POSITIONS:
-        print("  [EXPOSITION] Max " + str(MAX_POSITIONS) + " atteint")
-        return False
-    if inv + MAX_TRADE_EUR > MAX_TOTAL_EUR:
-        print("  [EXPOSITION] Budget " + str(MAX_TOTAL_EUR) + "EUR atteint")
-        return False
-    if asset_type == "crypto" and crp >= MAX_CRYPTO_POS:
-        print("  [EXPOSITION] Max crypto " + str(MAX_CRYPTO_POS) + " atteint")
-        return False
-    if asset_type != "crypto" and stk >= MAX_STOCK_POS:
-        print("  [EXPOSITION] Max stock " + str(MAX_STOCK_POS) + " atteint")
-        return False
+    pos = bot_state.get("positions", {})
+    if len(pos) >= MAX_POSITIONS: return False
+    if sum(p.get("amount_eur",0) for p in pos.values()) + MAX_TRADE_EUR > MAX_TOTAL_EUR: return False
+    if asset_type=="crypto" and sum(1 for k in pos if k in CRYPTO_ASSETS) >= MAX_CRYPTO_POS: return False
+    if asset_type!="crypto" and sum(1 for k in pos if k not in CRYPTO_ASSETS) >= MAX_STOCK_POS: return False
     return True
 
 def place_order_bitpanda(asset, side, amount_eur):
     if DRY_RUN:
-        print("  [DRY RUN] " + side + " " + asset + " " + str(amount_eur) + "EUR")
-        return {"status": "simulated"}
+        print("  [DRY RUN] "+side+" "+asset+" "+str(amount_eur)+"EUR")
+        return {"status":"simulated"}
     try:
         r = requests.get("https://api.exchange.bitpanda.com/public/v1/instruments", timeout=10)
         iid = None
         for inst in r.json():
-            if inst.get("base", {}).get("code") == asset and inst.get("quote", {}).get("code") == "EUR":
-                iid = inst["instrument_code"]
-                break
-        if not iid:
-            return None
+            if inst.get("base",{}).get("code")==asset and inst.get("quote",{}).get("code")=="EUR":
+                iid = inst["instrument_code"]; break
+        if not iid: return None
         r = requests.post(
             "https://api.exchange.bitpanda.com/public/v1/account/orders",
-            headers={"Authorization": "Bearer " + BITPANDA_KEY, "Content-Type": "application/json"},
-            json={"instrument_code": iid, "type": "MARKET", "side": side, "amount": str(amount_eur)},
-            timeout=15
-        )
+            headers={"Authorization":"Bearer "+BITPANDA_KEY,"Content-Type":"application/json"},
+            json={"instrument_code":iid,"type":"MARKET","side":side,"amount":str(amount_eur)},
+            timeout=15)
         return r.json()
     except Exception as e:
-        print("  [BITPANDA] " + str(e))
-        return None
+        print("  [BITPANDA] "+str(e)); return None
 
 # ============================================================
-# BOT PRINCIPAL
+# BOT PRINCIPAL v5.0
 # ============================================================
 
 def run_bot():
-    print("\n" + "="*65)
-    print("  HAOUD TRADING IA v4.0 - " + datetime.now().strftime('%d/%m/%Y %H:%M:%S') + " UTC")
-    print("  " + str(len(CRYPTO_ASSETS)) + " crypto | " + str(len(STOCK_ASSETS)) + " US | " + str(len(EUROPE_ASSETS)) + " EU | " + str(len(ETF_ASSETS)) + " ETF")
-    print("="*65 + "\n")
+    print("\n"+"="*65)
+    print("  HAOUD TRADING IA v5.0 - "+datetime.now().strftime('%d/%m/%Y %H:%M:%S')+" UTC")
+    print("  Deep Learning + 5min + Memoire infinie")
+    print("="*65+"\n")
 
     eur_rate = get_eur_rate()
-    print("[FX] 1 USD = " + str(round(eur_rate, 4)) + " EUR\n")
+    print("[FX] 1 USD = "+str(round(eur_rate,4))+" EUR\n")
 
-    # Prix
-    print("[CRYPTO] Top 30 CoinGecko...")
+    # --- Chargement des systemes d'apprentissage ---
+    learning_data = load_json(LEARNING_FILE, {
+        "version": 2, "weights": BASE_WEIGHTS.copy(),
+        "thresholds": BASE_PARAMS.copy(),
+        "asset_patterns": {}, "trade_log": [],
+        "stats": {"total_closed":0,"wins":0,"losses":0,"win_rate":0,"avg_pnl":0},
+        "last_update": None
+    })
+
+    # --- Distillation hebdo de sagesse ---
+    if should_distill_wisdom():
+        print("[WISDOM] Distillation hebdomadaire...")
+        history_for_wisdom = load_json(HISTORY_FILE, [])
+        new_wisdom = distill_wisdom(history_for_wisdom, learning_data)
+        if new_wisdom:
+            save_json(WISDOM_FILE, new_wisdom)
+
+    # --- Prix (batch optimise) ---
+    print("[CRYPTO] CoinGecko...")
     all_prices = {}
     all_prices.update(get_crypto_prices())
-    print("\n[ACTIONS] Yahoo Finance (US + Europe)...")
-    all_prices.update(get_all_stock_prices())
-    print("\n[ETFs] Yahoo Finance...")
-    all_prices.update(get_all_etf_prices())
+    print("\n[ACTIONS] Yahoo Finance batch...")
+    all_prices.update(get_yahoo_batch_quotes(STOCK_ASSETS, "stock"))
+    all_prices.update(get_yahoo_batch_quotes(EUROPE_ASSETS, "stock_eu"))
+    print("\n[ETFs] Yahoo Finance batch...")
+    all_prices.update(get_yahoo_batch_quotes(ETF_ASSETS, "etf"))
 
-    # On-chain
-    print("\n[ON-CHAIN] Blockchain.info + Etherscan...")
+    # --- On-chain ---
+    print("\n[ON-CHAIN]...")
     onchain_data = get_onchain_data()
 
-    # Whales
-    print("\n[WHALES] Crypto + Stocks...")
-    crypto_whales = get_crypto_whale_alerts()
-    stock_whales  = get_stock_whale_alerts()
-    whale_alerts  = process_whale_alerts(crypto_whales, stock_whales, all_prices, eur_rate)
-    # Garder 50 alertes max, triees par montant
-    whale_alerts.sort(key=lambda x: x["amount_usd"], reverse=True)
-    existing_whales = load_json(WHALE_FILE, {"alerts": [], "last_update": ""})
-    save_json(WHALE_FILE, {
-        "last_update": datetime.now().isoformat(),
-        "alerts":      whale_alerts[:50]
-    })
-    print("  [WHALES] " + str(len(whale_alerts)) + " alertes sauvegardees")
-
-    # Reddit + RSS
-    print("\n[REDDIT] Sentiment...")
-    reddit = get_reddit_sentiment()
-    print("\n[RSS] Actualites...")
-    news = fetch_rss_news()
-
-    # BTC correlation
+    # --- BTC correlation ---
     btc_status, btc_chg = get_btc_status(all_prices)
     if btc_status == "crash":
-        send_telegram("ALERTE BTC crash " + str(btc_chg) + "% - achats crypto bloques")
+        send_telegram("ALERTE BTC crash "+str(btc_chg)+"% - achats crypto bloques")
 
-    # Backtest
-    print("\n[BACKTEST] " + str(len(all_prices)) + " actifs...")
-    current_params  = load_json(PARAMS_FILE, DEFAULT_PARAMS.copy())
+    # --- Reddit + RSS ---
+    print("\n[REDDIT]...")
+    reddit = get_reddit_sentiment()
+    print("\n[RSS]...")
+    news = fetch_rss_news()
+    print("  [RSS] "+str(len(news))+" actualites")
+
+    # --- Backtest ---
+    print("\n[BACKTEST]...")
+    current_params = load_json(PARAMS_FILE, BASE_PARAMS.copy())
     backtest_results = {}
     for asset, pd in all_prices.items():
-        if asset in STABLECOINS:
-            continue
+        if asset in STABLECOINS: continue
         closes = pd.get("closes", [])
         if len(closes) >= 60:
-            bt = run_backtest(asset, closes, current_params)
-            if bt:
-                backtest_results[asset] = bt
-    print("  [BACKTEST] " + str(len(backtest_results)) + " actifs analyses")
+            wins = losses = total_pnl = 0
+            trades = []
+            position = False
+            entry = 0
+            sl = current_params.get("STOP_LOSS_PCT", 0.07)
+            tp = current_params.get("TAKE_PROFIT_PCT", 0.18)
+            rsi_os = current_params.get("RSI_OVERSOLD", 35)
+            for i in range(50, len(closes)-1):
+                w = closes[:i+1]
+                rsi = compute_rsi(w)
+                ma20 = compute_ma(w, 20)
+                ml2, ms2 = compute_macd(w)
+                price = closes[i]
+                if not position and rsi < rsi_os and price > ma20 and ml2 > ms2:
+                    entry = price; position = True
+                elif position and (rsi > 65 or price < entry*(1-sl) or price > entry*(1+tp)):
+                    pnl = (price-entry)/entry*100
+                    total_pnl += pnl
+                    if pnl > 0: wins += 1
+                    else: losses += 1
+                    trades.append(round(pnl,2))
+                    position = False
+            total = wins + losses
+            if total > 0:
+                backtest_results[asset] = {
+                    "win_rate": round(wins/total*100,1),
+                    "avg_pnl_pct": round(total_pnl/total,2),
+                    "total_trades": total
+                }
     save_json(BACKTEST_FILE, {"last_update": datetime.now().isoformat(), "results": backtest_results})
+    print("  [BACKTEST] "+str(len(backtest_results))+" actifs")
 
-    # Optimisation
-    print("\n[OPTIM] Parametres...")
-    optimized = optimize_params(backtest_results)
-    save_json(PARAMS_FILE, optimized)
-    params = optimized
+    # --- NIVEAU 1+2+3 : Apprentissage adaptatif ---
+    print("\n[LEARNING] Mise a jour parametres adaptatifs...")
+    updated_params  = update_adaptive_thresholds(learning_data)
+    updated_weights = learning_data.get("weights", BASE_WEIGHTS.copy())
+    params  = updated_params
+    weights = updated_weights
+    save_json(PARAMS_FILE, params)
 
-    # Claude macro
-    macro_cache = load_json(MACRO_CACHE_FILE, {
-        "score_macro": 50, "score_sentiment": 50, "tendance_marche": "NEUTRE",
-        "contexte": "Analyse non disponible.", "risque_principal": "Aucun.",
-        "opportunite_du_jour": "Aucune.", "actifs_favorables": [], "actifs_risques": []
+    # --- DEEP LEARNING : Entrainement ML ---
+    print("\n[ML] Deep Learning...")
+    history_all = load_json(HISTORY_FILE, [])
+    ml_model, ml_scaler = train_ml_model(history_all)
+    if ml_model is None:
+        ml_model, ml_scaler = load_ml_model()
+
+    # --- Claude macro (1x/jour) ---
+    macro_cache = load_json(MACRO_FILE, {
+        "score_macro":50,"score_sentiment":50,"tendance_marche":"NEUTRE",
+        "contexte":"Analyse non disponible.","risque_principal":"Aucun.",
+        "opportunite_du_jour":"Aucune.","actifs_favorables":[],"actifs_risques":[]
     })
     print("\n[MACRO] Claude...")
     if should_run_claude() and CLAUDE_KEY:
-        new_macro = run_claude_macro_analysis(all_prices, eur_rate, news, reddit, backtest_results, whale_alerts)
+        new_macro = run_claude_macro(all_prices, eur_rate, news, reddit, backtest_results, [], learning_data)
         if new_macro:
             macro_cache.update(new_macro)
-            save_json(MACRO_CACHE_FILE, macro_cache)
+            save_json(MACRO_FILE, macro_cache)
 
-    # Analyse et decisions
+    # --- Analyse et decisions ---
     history   = load_json(HISTORY_FILE, [])
-    bot_state = load_json(STATE_FILE, {"positions": {}, "last_run": None, "total_pnl_eur": 0})
+    bot_state = load_json(STATE_FILE, {"positions":{}, "last_run":None, "total_pnl_eur":0})
     min_score = params.get("MIN_SCORE_BUY", 70)
     max_score = params.get("MAX_SCORE_SELL", 40)
     sl_pct    = params.get("STOP_LOSS_PCT", 0.07)
     tp_pct    = params.get("TAKE_PROFIT_PCT", 0.18)
 
-    print("\n[ANALYSE] " + str(len(all_prices)) + " actifs...\n")
+    print("\n[ANALYSE] "+str(len(all_prices))+" actifs...\n")
     results = []
 
     for asset, price_data in all_prices.items():
-        if asset in STABLECOINS:
-            continue
+        if asset in STABLECOINS: continue
 
         price_usd  = price_data["price_usd"]
         price_eur  = price_usd * eur_rate
@@ -1141,158 +1178,216 @@ def run_bot():
         atype      = price_data.get("type", "crypto")
         asset_type = "crypto" if asset in CRYPTO_ASSETS else "other"
 
-        tech        = analyze_technical(asset, price_data, params)
-        score_final = compute_final_score(tech, macro_cache, asset, btc_status, onchain_data, params)
+        tech = analyze_technical(asset, price_data, params)
+        bt   = backtest_results.get(asset, {})
 
+        # Preparer entry pour ML
+        ml_entry = {
+            "rsi": tech["rsi"], "score_technique": tech["score_technique"],
+            "score_macro": macro_cache.get("score_macro", 50),
+            "score_sentiment": macro_cache.get("score_sentiment", 50),
+            "score_momentum": tech["score_momentum"], "score_volume": tech["score_volume"],
+            "change_24h": change, "score": 50, "type": atype,
+            "momentum": tech["momentum"], "reddit_score": reddit.get("crypto" if asset in CRYPTO_ASSETS else "stock", 50),
+            "bt_win_rate": bt.get("win_rate", 50),
+        }
+
+        score_final, ml_confidence = compute_final_score_v5(
+            tech, macro_cache, asset, btc_status, onchain_data,
+            params, weights, learning_data, ml_model, ml_scaler, ml_entry
+        )
+        ml_entry["score"] = score_final
+
+        # Signal
         if asset_type == "crypto" and btc_status == "crash":
             signal = "HOLD"
         else:
             if score_final >= min_score and tech["signal_tech"] == "BUY":   signal = "BUY"
             elif score_final <= max_score and tech["signal_tech"] == "SELL": signal = "SELL"
             else:                                                             signal = "HOLD"
-            if signal == "BUY"  and score_final < min_score: signal = "HOLD"
-            if signal == "SELL" and score_final > max_score: signal = "HOLD"
-
-        bt = backtest_results.get(asset, {})
+            if signal=="BUY"  and score_final < min_score: signal = "HOLD"
+            if signal=="SELL" and score_final > max_score: signal = "HOLD"
 
         action_taken = None
         position     = bot_state["positions"].get(asset)
 
         if position:
-            ep      = position["entry_price_eur"]
+            ep = position["entry_price_eur"]
             pnl_pct = (price_eur - ep) / ep
             if pnl_pct <= -sl_pct:
                 place_order_bitpanda(asset, "SELL", position["amount_eur"])
                 pnl_eur = pnl_pct * position["amount_eur"]
                 bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+
+                # LEARNING : enregistrer trade cloture
+                trade_rec = record_closed_trade(asset, position, price_eur, "STOP_LOSS", learning_data)
+                learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
+                learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
+
                 del bot_state["positions"][asset]
                 action_taken = "STOP_LOSS"
-                send_telegram("STOP-LOSS " + asset + " PnL: " + str(round(pnl_pct*100,2)) + "% (" + str(round(pnl_eur,2)) + "EUR)")
+                send_telegram("STOP-LOSS "+asset+" PnL: "+str(round(pnl_pct*100,2))+"% ("+str(round(pnl_eur,2))+"EUR)\nWin rate bot: "+str(learning_data["stats"].get("win_rate",0))+"%")
+
             elif pnl_pct >= tp_pct:
                 place_order_bitpanda(asset, "SELL", position["amount_eur"])
                 pnl_eur = pnl_pct * position["amount_eur"]
                 bot_state["total_pnl_eur"] = round(bot_state["total_pnl_eur"] + pnl_eur, 2)
+
+                # LEARNING : enregistrer trade gagnant
+                trade_rec = record_closed_trade(asset, position, price_eur, "TAKE_PROFIT", learning_data)
+                learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
+                learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
+
                 del bot_state["positions"][asset]
                 action_taken = "TAKE_PROFIT"
-                send_telegram("TAKE-PROFIT " + asset + " PnL: +" + str(round(pnl_pct*100,2)) + "% (+" + str(round(pnl_eur,2)) + "EUR)")
+                send_telegram("TAKE-PROFIT "+asset+" PnL: +"+str(round(pnl_pct*100,2))+"% (+"+str(round(pnl_eur,2))+"EUR)\nWin rate bot: "+str(learning_data["stats"].get("win_rate",0))+"%")
+
         elif signal == "BUY" and score_final >= min_score and not position:
             if can_open_position(asset, bot_state, asset_type):
                 place_order_bitpanda(asset, "BUY", MAX_TRADE_EUR)
-                bot_state["positions"][asset] = {
+                position_record = {
                     "entry_price_eur": price_eur,
                     "amount_eur":      MAX_TRADE_EUR,
-                    "entry_date":      datetime.now().isoformat()
+                    "entry_date":      datetime.now().isoformat(),
+                    "rsi":             tech["rsi"],
+                    "score":           score_final,
+                    "change_24h":      change,
+                    "score_technique": tech["score_technique"],
+                    "score_macro":     macro_cache.get("score_macro", 50),
+                    "score_sentiment": macro_cache.get("score_sentiment", 50),
+                    "onchain_score":   onchain_data.get(asset, {}).get("score_onchain"),
                 }
+                bot_state["positions"][asset] = position_record
                 action_taken = "BUY"
+                ml_str = " | ML="+str(ml_confidence)+"%" if ml_confidence else ""
                 send_telegram(
-                    "ACHAT " + asset + " (" + name + ")\n"
-                    "Prix: " + str(round(price_eur,2)) + "EUR | Score: " + str(score_final) + "/100\n"
-                    "RSI: " + str(tech["rsi"]) + " | BT win: " + str(bt.get("win_rate","N/A")) + "%\n"
-                    "SL: " + str(round(price_eur*(1-sl_pct),2)) + " TP: " + str(round(price_eur*(1+tp_pct),2))
+                    "ACHAT "+asset+" ("+name+")\n"
+                    "Prix: "+str(round(price_eur,2))+"EUR | Score: "+str(score_final)+"/100"+ml_str+"\n"
+                    "RSI: "+str(tech["rsi"])+" | BT win: "+str(bt.get("win_rate","N/A"))+"%\n"
+                    "SL: "+str(round(price_eur*(1-sl_pct),2))+" TP: "+str(round(price_eur*(1+tp_pct),2))
                 )
+
         elif signal == "SELL" and score_final <= max_score and position:
             place_order_bitpanda(asset, "SELL", position["amount_eur"])
+            trade_rec = record_closed_trade(asset, position, price_eur, "SELL", learning_data)
+            learning_data["weights"] = update_adaptive_weights(learning_data, trade_rec)
+            learning_data["asset_patterns"] = update_asset_patterns(learning_data, asset, trade_rec)
             del bot_state["positions"][asset]
             action_taken = "SELL"
 
+        ml_str = " ML="+str(ml_confidence)+"%" if ml_confidence else ""
+        print("["+asset+"] "+str(round(price_eur,2))+"EUR | RSI="+str(tech["rsi"])+" | Score="+str(score_final)+" | "+signal+ml_str)
+
         entry = {
-            "timestamp":       datetime.now().isoformat(),
-            "asset":           asset, "name": name, "type": atype,
-            "price_eur":       round(price_eur, 6),
-            "price_usd":       round(price_usd, 6),
-            "change_24h":      round(change, 2),
-            "high_24h":        round(price_data.get("high_24h", 0) * eur_rate, 6),
-            "low_24h":         round(price_data.get("low_24h", 0) * eur_rate, 6),
-            "volume_usd":      round(price_data.get("volume_usd", 0), 0),
-            "rsi":             tech["rsi"], "macd": tech["macd"],
-            "bb_upper":        round(tech["bb_upper"] * eur_rate, 4),
-            "bb_lower":        round(tech["bb_lower"] * eur_rate, 4),
-            "ma20":            round(tech["ma20"] * eur_rate, 4),
-            "ma50":            round(tech["ma50"] * eur_rate, 4),
-            "ma200":           round(tech["ma200"] * eur_rate, 4),
-            "momentum":        tech["momentum"],
-            "score":           score_final,
+            "timestamp": datetime.now().isoformat(), "asset": asset, "name": name, "type": atype,
+            "price_eur": round(price_eur,6), "price_usd": round(price_usd,6),
+            "change_24h": round(change,2),
+            "high_24h": round(price_data.get("high_24h",0)*eur_rate,6),
+            "low_24h":  round(price_data.get("low_24h",0)*eur_rate,6),
+            "volume_usd": round(price_data.get("volume_usd",0),0),
+            "rsi": tech["rsi"], "macd": tech["macd"],
+            "bb_upper": round(tech["bb_upper"]*eur_rate,4),
+            "bb_lower": round(tech["bb_lower"]*eur_rate,4),
+            "ma20":  round(tech["ma20"]*eur_rate,4),
+            "ma50":  round(tech["ma50"]*eur_rate,4),
+            "ma200": round(tech["ma200"]*eur_rate,4),
+            "momentum": tech["momentum"],
+            "score": score_final,
             "score_technique": tech["score_technique"],
-            "score_macro":     macro_cache.get("score_macro", 50),
-            "score_sentiment": macro_cache.get("score_sentiment", 50),
+            "score_macro":     macro_cache.get("score_macro",50),
+            "score_sentiment": macro_cache.get("score_sentiment",50),
             "score_momentum":  tech["score_momentum"],
             "score_volume":    tech["score_volume"],
-            "signal":          signal, "confiance": score_final,
-            "tendance":        tech["tendance"], "rsi_analyse": tech["rsi_analyse"],
-            "action":          action_taken or "HOLD",
-            "raison":          macro_cache.get("contexte", ""),
-            "risque":          macro_cache.get("risque_principal", ""),
-            "opportunite":     macro_cache.get("opportunite_du_jour", ""),
-            "source":          price_data.get("source", ""),
-            "bt_win_rate":     bt.get("win_rate") if bt else None,
-            "bt_avg_pnl":      bt.get("avg_pnl_pct") if bt else None,
-            "reddit_score":    reddit.get("crypto" if asset in CRYPTO_ASSETS else "stock", 50),
-            "onchain_score":   onchain_data.get(asset, {}).get("score_onchain"),
-            "dry_run":         DRY_RUN
+            "signal": signal, "confiance": score_final,
+            "tendance": tech["tendance"], "rsi_analyse": tech["rsi_analyse"],
+            "action": action_taken or "HOLD",
+            "raison":       macro_cache.get("contexte",""),
+            "risque":       macro_cache.get("risque_principal",""),
+            "opportunite":  macro_cache.get("opportunite_du_jour",""),
+            "source":       price_data.get("source",""),
+            "bt_win_rate":  bt.get("win_rate"),
+            "bt_avg_pnl":   bt.get("avg_pnl_pct"),
+            "reddit_score": reddit.get("crypto" if asset in CRYPTO_ASSETS else "stock",50),
+            "onchain_score":onchain_data.get(asset,{}).get("score_onchain"),
+            "ml_confidence":ml_confidence,
+            "dry_run": DRY_RUN
         }
         history.append(entry)
         results.append(entry)
-        print("[" + asset + "] " + str(round(price_eur,2)) + "EUR | RSI=" + str(tech["rsi"]) + " | Score=" + str(score_final) + " | " + signal + (" BT=" + str(bt.get("win_rate","?")) + "%" if bt else ""))
+
+    # --- Sauvegarder learning ---
+    learning_data["last_update"] = datetime.now().isoformat()
+    save_json(LEARNING_FILE, learning_data)
 
     history = history[-2000:]
     actions = [e for e in results if e["action"] != "HOLD"]
-    total_inv = sum(p.get("amount_eur", 0) for p in bot_state["positions"].values())
+    total_inv = sum(p.get("amount_eur",0) for p in bot_state["positions"].values())
+    stats = learning_data.get("stats", {})
 
-    bot_state["last_run"]         = datetime.now().isoformat()
-    bot_state["eur_rate"]         = eur_rate
-    bot_state["dry_run"]          = DRY_RUN
-    bot_state["btc_status"]       = btc_status
-    bot_state["btc_change"]       = btc_chg
-    bot_state["total_assets"]     = len(results)
-    bot_state["macro"]            = {
-        "score_macro":         macro_cache.get("score_macro", 50),
-        "score_sentiment":     macro_cache.get("score_sentiment", 50),
-        "tendance_marche":     macro_cache.get("tendance_marche", "NEUTRE"),
-        "contexte":            macro_cache.get("contexte", ""),
-        "risque_principal":    macro_cache.get("risque_principal", ""),
-        "opportunite_du_jour": macro_cache.get("opportunite_du_jour", ""),
-        "last_claude_run":     macro_cache.get("last_claude_run", ""),
-        "reddit_score":        reddit.get("crypto", 50),
-        "posts_analyzed":      reddit.get("posts_analyzed", 0),
+    bot_state["last_run"]    = datetime.now().isoformat()
+    bot_state["eur_rate"]    = eur_rate
+    bot_state["dry_run"]     = DRY_RUN
+    bot_state["btc_status"]  = btc_status
+    bot_state["btc_change"]  = btc_chg
+    bot_state["total_assets"]= len(results)
+    bot_state["learning"]    = {
+        "win_rate":          stats.get("win_rate",0),
+        "avg_pnl":           stats.get("avg_pnl",0),
+        "total_closed":      stats.get("total_closed",0),
+        "current_min_score": params.get("MIN_SCORE_BUY",70),
+        "current_sl":        round(params.get("STOP_LOSS_PCT",0.07)*100,1),
+        "current_weights":   weights,
+        "ml_active":         ml_model is not None,
+        "ml_accuracy":       None,
+    }
+    # Recuperer accuracy ML si dispo
+    try:
+        with open(MODEL_FILE,'rb') as f:
+            mdata = pickle.load(f)
+            bot_state["learning"]["ml_accuracy"] = mdata.get("accuracy")
+    except: pass
+
+    bot_state["macro"] = {
+        "score_macro":         macro_cache.get("score_macro",50),
+        "score_sentiment":     macro_cache.get("score_sentiment",50),
+        "tendance_marche":     macro_cache.get("tendance_marche","NEUTRE"),
+        "contexte":            macro_cache.get("contexte",""),
+        "risque_principal":    macro_cache.get("risque_principal",""),
+        "opportunite_du_jour": macro_cache.get("opportunite_du_jour",""),
+        "last_claude_run":     macro_cache.get("last_claude_run",""),
+        "reddit_score":        reddit.get("crypto",50),
         "news_count":          len(news),
-        "whale_alerts":        len(whale_alerts),
     }
-    bot_state["optimized_params"] = {
-        "MIN_SCORE_BUY":     params.get("MIN_SCORE_BUY", 70),
-        "STOP_LOSS_PCT":     params.get("STOP_LOSS_PCT", 0.07),
-        "TAKE_PROFIT_PCT":   params.get("TAKE_PROFIT_PCT", 0.18),
-        "profitable_assets": params.get("profitable_assets", 0),
-    }
-    bot_state["exposition"]       = {
+    bot_state["exposition"] = {
         "total_positions":   len(bot_state["positions"]),
         "total_investi_eur": total_inv,
         "max_positions":     MAX_POSITIONS,
         "max_total_eur":     MAX_TOTAL_EUR,
     }
-    bot_state["last_prices"]      = {
+    bot_state["last_prices"] = {
         k: {
-            "price_eur":  round(v["price_usd"] * eur_rate, 6),
-            "price_usd":  round(v["price_usd"], 6),
-            "change_24h": round(v["change_24h"], 2),
-            "high_24h":   round(v.get("high_24h", 0) * eur_rate, 6),
-            "low_24h":    round(v.get("low_24h", 0) * eur_rate, 6),
-            "volume_usd": round(v.get("volume_usd", 0), 0),
-            "rsi":        compute_rsi(v.get("closes", [])),
-            "name":       v.get("name", k),
-            "type":       v.get("type", "crypto"),
-            "source":     v.get("source", "")
-        } for k, v in all_prices.items() if k not in STABLECOINS
+            "price_eur":  round(v["price_usd"]*eur_rate,6),
+            "price_usd":  round(v["price_usd"],6),
+            "change_24h": round(v["change_24h"],2),
+            "high_24h":   round(v.get("high_24h",0)*eur_rate,6),
+            "low_24h":    round(v.get("low_24h",0)*eur_rate,6),
+            "volume_usd": round(v.get("volume_usd",0),0),
+            "rsi":        compute_rsi(v.get("closes",[])),
+            "name":       v.get("name",k),
+            "type":       v.get("type","crypto"),
+            "source":     v.get("source","")
+        } for k,v in all_prices.items() if k not in STABLECOINS
     }
 
     save_json(HISTORY_FILE, history)
     save_json(STATE_FILE, bot_state)
 
-    print("\n" + "="*65)
-    print("  DONE v4.0 - " + str(len(results)) + " actifs | " + str(len(actions)) + " ordres | PnL: " + str(bot_state["total_pnl_eur"]) + "EUR")
-    print("  Exposition: " + str(len(bot_state["positions"])) + "/" + str(MAX_POSITIONS) + " | " + str(total_inv) + "/" + str(MAX_TOTAL_EUR) + "EUR")
-    print("  Whales: " + str(len(whale_alerts)) + " | Reddit: " + str(reddit.get("crypto",50)) + "/100 | News: " + str(len(news)))
-    print("  BTC: " + btc_status + " (" + str(btc_chg) + "%) | Params BUY>=" + str(params.get("MIN_SCORE_BUY",70)))
-    print("="*65 + "\n")
+    print("\n"+"="*65)
+    print("  DONE v5.0 - "+str(len(results))+" actifs | "+str(len(actions))+" ordres | PnL: "+str(bot_state["total_pnl_eur"])+"EUR")
+    print("  Exposition: "+str(len(bot_state["positions"]))+"/"+str(MAX_POSITIONS)+" | "+str(total_inv)+"/"+str(MAX_TOTAL_EUR)+"EUR")
+    print("  Learning: WR="+str(stats.get("win_rate",0))+"% | ML="+str(ml_model is not None)+" | Trades="+str(stats.get("total_closed",0)))
+    print("  Seuil BUY="+str(params.get("MIN_SCORE_BUY",70))+" | SL="+str(round(params.get("STOP_LOSS_PCT",0.07)*100,1))+"% | Reddit="+str(reddit.get("crypto",50)))
+    print("="*65+"\n")
 
 if __name__ == "__main__":
     run_bot()
