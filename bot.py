@@ -1568,6 +1568,238 @@ def detect_chart_patterns(closes):
     return min(20, max(-20, score)), pattern_str
 
 
+
+# ============================================================
+# ARBITRAGE MULTI-EXCHANGE (surveillance + alertes Telegram)
+# Exchanges : Bitpanda + Binance + Crypto.com
+# ============================================================
+
+ARBITRAGE_EXCHANGES = {
+    "Bitpanda": {
+        "fee": 0.0015,   # 0.15% taker
+        "base_url": "https://api.exchange.bitpanda.com/public/v1",
+    },
+    "Binance": {
+        "fee": 0.001,    # 0.10% taker
+        "base_url": "https://api.binance.com/api/v3",
+    },
+    "CryptoCom": {
+        "fee": 0.004,    # 0.40% taker (spot)
+        "base_url": "https://api.crypto.com/exchange/v1",
+    },
+}
+
+# Seuils d'arbitrage
+ARB_MIN_SPREAD     = 0.0025   # 0.25% min pour une alerte
+ARB_AUTO_SPREAD    = 0.0050   # 0.50% pour alerte "forte opportunite"
+ARB_CRYPTO_LIST    = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "LINK"]
+
+# Mapping tickers vers chaque exchange
+TICKER_MAP = {
+    "Binance": {
+        "BTC": "BTCUSDT", "ETH": "ETHUSDT", "SOL": "SOLUSDT",
+        "BNB": "BNBUSDT", "XRP": "XRPUSDT", "ADA": "ADAUSDT",
+        "DOGE": "DOGEUSDT", "LINK": "LINKUSDT", "DOT": "DOTUSDT",
+        "AVAX": "AVAXUSDT", "LTC": "LTCUSDT", "BCH": "BCHUSDT",
+    },
+    "CryptoCom": {
+        "BTC": "BTC_USDT", "ETH": "ETH_USDT", "SOL": "SOL_USDT",
+        "BNB": "BNB_USDT", "XRP": "XRP_USDT", "ADA": "ADA_USDT",
+        "DOGE": "DOGE_USDT", "LINK": "LINK_USDT", "DOT": "DOT_USDT",
+        "AVAX": "AVAX_USDT", "LTC": "LTC_USDT", "BCH": "BCH_USDT",
+    },
+}
+
+def get_bitpanda_prices_arb():
+    """Prix Bitpanda via API publique"""
+    prices = {}
+    try:
+        r = requests.get(
+            "https://api.exchange.bitpanda.com/public/v1/market-ticker",
+            timeout=8
+        )
+        for item in r.json():
+            instrument = item.get("instrument_code", "")
+            # Chercher paires EUR et USDT
+            for ticker in ARB_CRYPTO_LIST:
+                if instrument == ticker + "_EUR" or instrument == ticker + "_USDT":
+                    try:
+                        price = float(item.get("last_price", 0))
+                        if price > 0:
+                            currency = "EUR" if "EUR" in instrument else "USDT"
+                            prices[ticker] = {"price": price, "currency": currency, "exchange": "Bitpanda"}
+                    except:
+                        pass
+        print("  [ARB] Bitpanda: " + str(len(prices)) + " prix")
+    except Exception as e:
+        print("  [ARB] Bitpanda erreur: " + str(e))
+    return prices
+
+def get_binance_prices_arb():
+    """Prix Binance via API publique (sans cle)"""
+    prices = {}
+    try:
+        symbols = [TICKER_MAP["Binance"][t] for t in ARB_CRYPTO_LIST if t in TICKER_MAP["Binance"]]
+        symbols_str = "[" + ",".join(['"' + s + '"' for s in symbols]) + "]"
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/price?symbols=" + symbols_str,
+            timeout=8
+        )
+        reverse_map = {v: k for k, v in TICKER_MAP["Binance"].items()}
+        for item in r.json():
+            ticker = reverse_map.get(item.get("symbol", ""))
+            if ticker:
+                try:
+                    prices[ticker] = {
+                        "price":    float(item["price"]),
+                        "currency": "USDT",
+                        "exchange": "Binance"
+                    }
+                except:
+                    pass
+        print("  [ARB] Binance: " + str(len(prices)) + " prix")
+    except Exception as e:
+        print("  [ARB] Binance erreur: " + str(e))
+    return prices
+
+def get_cryptocom_prices_arb():
+    """Prix Crypto.com via API publique"""
+    prices = {}
+    try:
+        r = requests.get(
+            "https://api.crypto.com/exchange/v1/public/get-tickers",
+            timeout=10
+        )
+        data = r.json().get("result", {}).get("data", [])
+        reverse_map = {v: k for k, v in TICKER_MAP["CryptoCom"].items()}
+        for item in data:
+            instrument = item.get("i", "")
+            ticker = reverse_map.get(instrument)
+            if ticker:
+                try:
+                    price = float(item.get("a", 0))   # ask price
+                    if price > 0:
+                        prices[ticker] = {
+                            "price":    price,
+                            "currency": "USDT",
+                            "exchange": "CryptoCom"
+                        }
+                except:
+                    pass
+        print("  [ARB] Crypto.com: " + str(len(prices)) + " prix")
+    except Exception as e:
+        print("  [ARB] Crypto.com erreur: " + str(e))
+    return prices
+
+def detect_arbitrage_opportunities(eur_rate):
+    """
+    Compare les prix sur les 3 exchanges et detecte les opportunites.
+    Retourne une liste d opportunites triees par spread.
+    """
+    opportunities = []
+
+    # Recuperer les prix sur les 3 exchanges
+    bp_prices  = get_bitpanda_prices_arb()
+    bn_prices  = get_binance_prices_arb()
+    cc_prices  = get_cryptocom_prices_arb()
+
+    all_exchange_prices = {
+        "Bitpanda":  bp_prices,
+        "Binance":   bn_prices,
+        "CryptoCom": cc_prices,
+    }
+
+    # Pour chaque crypto, comparer les prix entre exchanges
+    for ticker in ARB_CRYPTO_LIST:
+        exchange_data = []
+
+        for ex_name, ex_prices in all_exchange_prices.items():
+            if ticker not in ex_prices:
+                continue
+            p = ex_prices[ticker]
+            price = p["price"]
+            # Convertir en EUR si USDT
+            if p["currency"] == "USDT":
+                price_eur = price * eur_rate
+            else:
+                price_eur = price
+            fee = ARBITRAGE_EXCHANGES[ex_name]["fee"]
+            exchange_data.append({
+                "exchange": ex_name,
+                "price_eur": price_eur,
+                "price_raw": p["price"],
+                "currency": p["currency"],
+                "fee": fee,
+                "price_after_fee_buy":  price_eur * (1 + fee),
+                "price_after_fee_sell": price_eur * (1 - fee),
+            })
+
+        if len(exchange_data) < 2:
+            continue
+
+        # Trouver le moins cher et le plus cher
+        exchange_data.sort(key=lambda x: x["price_eur"])
+        cheapest  = exchange_data[0]
+        priciest  = exchange_data[-1]
+
+        # Calculer le spread net (apres frais des 2 cotes)
+        buy_price  = cheapest["price_after_fee_buy"]
+        sell_price = priciest["price_after_fee_sell"]
+        spread_net = (sell_price - buy_price) / buy_price
+
+        if spread_net >= ARB_MIN_SPREAD:
+            profit_50eur = round(50 * spread_net, 2)
+            strength     = "🔥 FORTE" if spread_net >= ARB_AUTO_SPREAD else "⚡ NORMALE"
+            opportunity  = {
+                "ticker":         ticker,
+                "buy_exchange":   cheapest["exchange"],
+                "buy_price_eur":  round(cheapest["price_eur"], 4),
+                "sell_exchange":  priciest["exchange"],
+                "sell_price_eur": round(priciest["price_eur"], 4),
+                "spread_net_pct": round(spread_net * 100, 3),
+                "profit_50eur":   profit_50eur,
+                "strength":       strength,
+                "timestamp":      datetime.now().isoformat(),
+                "all_prices":     {d["exchange"]: round(d["price_eur"], 4) for d in exchange_data},
+            }
+            opportunities.append(opportunity)
+            print("  [ARB] " + strength + " " + ticker +
+                  " | Acheter: " + cheapest["exchange"] + " @ " + str(round(cheapest["price_eur"], 2)) + "EUR" +
+                  " | Vendre: " + priciest["exchange"] + " @ " + str(round(priciest["price_eur"], 2)) + "EUR" +
+                  " | Spread net: +" + str(round(spread_net*100, 3)) + "%" +
+                  " | Gain/50EUR: +" + str(profit_50eur) + "EUR")
+
+    # Trier par spread decroissant
+    opportunities.sort(key=lambda x: x["spread_net_pct"], reverse=True)
+    return opportunities
+
+def send_arbitrage_alerts(opportunities):
+    """Envoie les alertes Telegram pour les opportunites d arbitrage"""
+    if not opportunities:
+        return
+
+    # Alerte pour les opportunites fortes uniquement
+    strong = [o for o in opportunities if o["spread_net_pct"] >= ARB_AUTO_SPREAD * 100]
+    normal = [o for o in opportunities if o["spread_net_pct"] < ARB_AUTO_SPREAD * 100]
+
+    if strong:
+        msg = "🔥 ARBITRAGE FORT - HAOUD TRADING IA\n\n"
+        for o in strong[:3]:
+            msg += ("💰 " + o["ticker"] + " | Spread: +" + str(o["spread_net_pct"]) + "%\n"
+                   + "  ACHETER: " + o["buy_exchange"] + " @ " + str(o["buy_price_eur"]) + "EUR\n"
+                   + "  VENDRE:  " + o["sell_exchange"] + " @ " + str(o["sell_price_eur"]) + "EUR\n"
+                   + "  Gain: +" + str(o["profit_50eur"]) + "EUR\n\n")
+        msg += "⚠️ Agir vite - l'écart se referme en quelques minutes !"
+        send_telegram(msg)
+
+    elif normal:
+        msg = "⚡ ARBITRAGE DETECTE - HAOUD TRADING IA\n\n"
+        for o in normal[:5]:
+            msg += (o["ticker"] + " | +" + str(o["spread_net_pct"]) + "% | "
+                   + o["buy_exchange"] + " -> " + o["sell_exchange"]
+                   + " | +" + str(o["profit_50eur"]) + "EUR/50EUR\n")
+        send_telegram(msg)
+
 # ============================================================
 # BOT PRINCIPAL v5.0
 # ============================================================
@@ -1635,6 +1867,12 @@ def run_bot():
     # --- STRATEGIE 2 : ARK / Smart Money ---
     print("\n[ARK/SMART MONEY]...")
     ark_holdings = get_ark_holdings()
+
+    # --- ARBITRAGE MULTI-EXCHANGE ---
+    print("\n[ARBITRAGE] Scan Bitpanda + Binance + Crypto.com...")
+    arb_opportunities = detect_arbitrage_opportunities(eur_rate)
+    send_arbitrage_alerts(arb_opportunities)
+    print("  [ARB] " + str(len(arb_opportunities)) + " opportunite(s) detectee(s)")
 
     # --- Backtest ---
     print("\n[BACKTEST]...")
@@ -1987,6 +2225,13 @@ def run_bot():
             bot_state["learning"]["ml_accuracy"] = mdata.get("accuracy")
     except: pass
 
+    bot_state["arbitrage"] = {
+        "last_scan":      datetime.now().isoformat(),
+        "opportunities":  arb_opportunities[:10],
+        "count":          len(arb_opportunities),
+        "best_spread":    arb_opportunities[0]["spread_net_pct"] if arb_opportunities else 0,
+        "best_ticker":    arb_opportunities[0]["ticker"] if arb_opportunities else None,
+    }
     bot_state["macro"] = {
         "score_macro":         macro_cache.get("score_macro",50),
         "score_sentiment":     macro_cache.get("score_sentiment",50),
