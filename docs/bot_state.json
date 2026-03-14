@@ -43,7 +43,7 @@
       "secteur": "other"
     }
   },
-  "last_run": "2026-03-14T17:02:13.503528",
+  "last_run": "2026-03-14T17:02:49.834940",
   "total_pnl_eur": 0,
   "eur_rate": 0.87322673,
   "last_prices": {
@@ -408,7 +408,7 @@
     "ml_accuracy": null
   },
   "arbitrage": {
-    "last_scan": "2026-03-14T17:02:13.503548",
+    "last_scan": "2026-03-14T17:02:49.834960",
     "opportunities": [],
     "count": 0,
     "best_spread": 0,
