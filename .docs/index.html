@@ -29,7 +29,7 @@ body.light {
 body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px;min-height:100vh}
 
 /* LAYOUT AVEC PANNEAU LATERAL */
-.app-wrapper{display:flex;height:calc(100vh - 90px);overflow:hidden}
+.app-wrapper{display:flex;height:calc(100vh - 210px);overflow:hidden}
 .content-area{flex:1;overflow-y:auto;min-width:0}
 .side-panel{width:0;min-width:0;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;overflow-x:hidden;transition:width .3s ease,min-width .3s ease;position:relative;flex-shrink:0}
 .side-panel.open{width:380px;min-width:380px}
@@ -700,19 +700,27 @@ async function loadData() {
   document.getElementById('statusDot').className = 'dot amber';
   document.getElementById('statusText').textContent = 'Mise à jour...';
   try {
-    const [sR, hR, wR, lR, wsR] = await Promise.all([
-      fetch(STATE_URL    + '?t=' + Date.now()),
-      fetch(HISTORY_URL  + '?t=' + Date.now()),
-      fetch(WHALE_URL    + '?t=' + Date.now()),
-      fetch(LEARNING_URL + '?t=' + Date.now()).catch(() => ({json:()=>({})})),
-      fetch(WISDOM_URL   + '?t=' + Date.now()).catch(() => ({json:()=>({})})),
+    const safeFetch = async (url) => {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) return {};
+        return await r.json();
+      } catch(e) { return {}; }
+    };
+
+    const [sR, hR, wR] = await Promise.all([
+      fetch(STATE_URL   + '?t=' + Date.now()),
+      fetch(HISTORY_URL + '?t=' + Date.now()),
+      fetch(WHALE_URL   + '?t=' + Date.now()),
     ]);
-    state        = await sR.json();
-    history      = await hR.json();
-    const wd     = await wR.json();
-    whaleData    = wd.alerts || [];
-    learningData = await lR.json().catch(() => ({}));
-    wisdomData   = await wsR.json().catch(() => ({}));
+    state     = await sR.json();
+    history   = await hR.json();
+    const wd  = await wR.json();
+    whaleData = wd.alerts || [];
+
+    // Chargement non-bloquant des fichiers optionnels
+    learningData = await safeFetch(LEARNING_URL + '?t=' + Date.now());
+    wisdomData   = await safeFetch(WISDOM_URL   + '?t=' + Date.now());
     render();
     document.getElementById('statusDot').className = 'dot green';
     document.getElementById('statusText').textContent = 'Live · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
@@ -1119,6 +1127,7 @@ function render() {
 
 // ─── DÉMARRAGE ────────────────────────────────────────────────────
 applyTheme();
+renderLearningBars(); // Afficher immédiatement avec valeurs par défaut
 loadData();
 setInterval(loadData, REFRESH_MS);
 </script>
