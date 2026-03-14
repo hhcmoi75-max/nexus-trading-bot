@@ -15,13 +15,278 @@
     "TAKE_PROFIT_PCT": 0.18
   },
   "asset_patterns": {},
-  "trade_log": [],
+  "trade_log": [
+    {
+      "asset": "NVDA",
+      "action": "TIMEOUT",
+      "entry_price_eur": 156.489167,
+      "exit_price_eur": 156.4892,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-13T20:34:56.501674",
+      "exit_time": "2026-03-14T19:52:48.341800",
+      "entry_rsi": 58.7,
+      "entry_score": 75,
+      "entry_change_24h": 1.73,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 72,
+        "score_macro": 68,
+        "score_sentiment": 75,
+        "onchain_score": null,
+        "score": 75
+      }
+    },
+    {
+      "asset": "NVDA",
+      "action": "TIMEOUT",
+      "entry_price_eur": 156.489167,
+      "exit_price_eur": 156.4892,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-13T21:03:05.925678",
+      "exit_time": "2026-03-14T19:52:48.341816",
+      "entry_rsi": 58.7,
+      "entry_score": 75,
+      "entry_change_24h": 1.73,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 72,
+        "score_macro": 80,
+        "score_sentiment": 75,
+        "onchain_score": null,
+        "score": 75
+      }
+    },
+    {
+      "asset": "NVDA",
+      "action": "TIMEOUT",
+      "entry_price_eur": 156.489167,
+      "exit_price_eur": 156.4892,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-13T22:01:57.536539",
+      "exit_time": "2026-03-14T19:52:48.341825",
+      "entry_rsi": 58.7,
+      "entry_score": 75,
+      "entry_change_24h": 1.73,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 72,
+        "score_macro": 68,
+        "score_sentiment": 75,
+        "onchain_score": null,
+        "score": 75
+      }
+    },
+    {
+      "asset": "MSFT",
+      "action": "TIMEOUT",
+      "entry_price_eur": 343.40799,
+      "exit_price_eur": 343.408,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-13T21:03:18.082928",
+      "exit_time": "2026-03-14T19:52:48.341842",
+      "entry_rsi": 3.1,
+      "entry_score": 80,
+      "entry_change_24h": 0.72,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 85,
+        "score_macro": 70,
+        "score_sentiment": 75,
+        "onchain_score": null,
+        "score": 80
+      }
+    },
+    {
+      "asset": "GLD",
+      "action": "TIMEOUT",
+      "entry_price_eur": 400.091362,
+      "exit_price_eur": 400.0914,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-13T22:09:30.548695",
+      "exit_time": "2026-03-14T19:52:48.341884",
+      "entry_rsi": 22.8,
+      "entry_score": 67,
+      "entry_change_24h": -4.74,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 75,
+        "score_macro": 70,
+        "score_sentiment": 85,
+        "onchain_score": null,
+        "score": 67
+      }
+    },
+    {
+      "asset": "BTC",
+      "action": "TIMEOUT",
+      "entry_price_eur": 61661.159085,
+      "exit_price_eur": 61723.1582,
+      "pnl_pct": 0.1,
+      "entry_time": "2026-03-14T16:22:12.928416",
+      "exit_time": "2026-03-14T19:52:48.341924",
+      "entry_rsi": 50,
+      "entry_score": 78,
+      "entry_change_24h": -1.15,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 48,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": 60,
+        "score": 78
+      }
+    },
+    {
+      "asset": "BTC",
+      "action": "TIMEOUT",
+      "entry_price_eur": 61715.299143,
+      "exit_price_eur": 61723.1582,
+      "pnl_pct": 0.01,
+      "entry_time": "2026-03-14T17:02:13.502350",
+      "exit_time": "2026-03-14T19:52:48.341930",
+      "entry_rsi": 50,
+      "entry_score": 75,
+      "entry_change_24h": -1.74,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 48,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": 60,
+        "score": 75
+      }
+    },
+    {
+      "asset": "BTC",
+      "action": "TIMEOUT",
+      "entry_price_eur": 61723.158183,
+      "exit_price_eur": 61723.1582,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-14T19:18:15.642684",
+      "exit_time": "2026-03-14T19:52:48.341935",
+      "entry_rsi": 58.7,
+      "entry_score": 72,
+      "entry_change_24h": -0.82,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 43,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": 60,
+        "score": 72
+      }
+    },
+    {
+      "asset": "ETH",
+      "action": "TIMEOUT",
+      "entry_price_eur": 1811.011112,
+      "exit_price_eur": 1814.1373,
+      "pnl_pct": 0.17,
+      "entry_time": "2026-03-14T16:22:12.928474",
+      "exit_time": "2026-03-14T19:52:48.341944",
+      "entry_rsi": 50,
+      "entry_score": 66,
+      "entry_change_24h": -2.22,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 48,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": null,
+        "score": 66
+      }
+    },
+    {
+      "asset": "ETH",
+      "action": "TIMEOUT",
+      "entry_price_eur": 1814.163461,
+      "exit_price_eur": 1814.1373,
+      "pnl_pct": -0.0,
+      "entry_time": "2026-03-14T17:02:13.502426",
+      "exit_time": "2026-03-14T19:52:48.341949",
+      "entry_rsi": 50,
+      "entry_score": 66,
+      "entry_change_24h": -2.75,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 48,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": null,
+        "score": 66
+      }
+    },
+    {
+      "asset": "ETH",
+      "action": "TIMEOUT",
+      "entry_price_eur": 1814.137264,
+      "exit_price_eur": 1814.1373,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-14T19:18:15.642846",
+      "exit_time": "2026-03-14T19:52:48.341954",
+      "entry_rsi": 58.4,
+      "entry_score": 78,
+      "entry_change_24h": -1.29,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 43,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": null,
+        "score": 78
+      }
+    },
+    {
+      "asset": "NEAR",
+      "action": "TIMEOUT",
+      "entry_price_eur": 1.143927,
+      "exit_price_eur": 1.1439,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-14T16:22:12.929170",
+      "exit_time": "2026-03-14T19:52:48.342029",
+      "entry_rsi": 50,
+      "entry_score": 78,
+      "entry_change_24h": -3.57,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 47,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": null,
+        "score": 78
+      }
+    },
+    {
+      "asset": "NEAR",
+      "action": "TIMEOUT",
+      "entry_price_eur": 1.143927,
+      "exit_price_eur": 1.1439,
+      "pnl_pct": 0.0,
+      "entry_time": "2026-03-14T17:02:13.503048",
+      "exit_time": "2026-03-14T19:52:48.342034",
+      "entry_rsi": 50,
+      "entry_score": 75,
+      "entry_change_24h": -3.94,
+      "simulated": true,
+      "entry_snapshot": {
+        "score_technique": 47,
+        "score_macro": 45,
+        "score_sentiment": 35,
+        "onchain_score": null,
+        "score": 75
+      }
+    }
+  ],
   "stats": {
-    "total_closed": 0,
-    "wins": 0,
-    "losses": 0,
-    "win_rate": 0,
-    "avg_pnl": 0
+    "total_closed": 13,
+    "wins": 3,
+    "losses": 10,
+    "win_rate": 23.1,
+    "avg_pnl": 0.02,
+    "total_pnl": 0.28,
+    "best_trade": 0.17,
+    "worst_trade": 0.0,
+    "simulated": 13
   },
-  "last_update": "2026-03-14T19:18:15.657106"
+  "last_update": "2026-03-14T19:52:48.749064"
 }
