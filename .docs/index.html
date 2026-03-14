@@ -28,6 +28,43 @@ body.light {
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;font-size:13px;min-height:100vh}
 
+/* LAYOUT AVEC PANNEAU LATERAL */
+.app-wrapper{display:flex;height:calc(100vh - 90px);overflow:hidden}
+.content-area{flex:1;overflow-y:auto;min-width:0}
+.side-panel{width:0;min-width:0;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;overflow-x:hidden;transition:width .3s ease,min-width .3s ease;position:relative;flex-shrink:0}
+.side-panel.open{width:380px;min-width:380px}
+@media(max-width:1100px){.side-panel.open{width:320px;min-width:320px}}
+@media(max-width:700px){
+  .app-wrapper{flex-direction:column;height:auto;overflow:visible}
+  .content-area{overflow-y:visible}
+  .side-panel{width:100%!important;min-width:100%!important;border-left:none;border-top:1px solid var(--border);max-height:70vh;overflow-y:auto}
+}
+.side-panel-inner{padding:16px;width:380px;min-width:380px}
+@media(max-width:1100px){.side-panel-inner{width:320px;min-width:320px}}
+@media(max-width:700px){.side-panel-inner{width:100%;min-width:0}}
+.side-close{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border);z-index:10;margin:-16px -16px 12px -16px}
+.side-close-btn{background:transparent;border:1px solid var(--border);color:var(--muted);width:26px;height:26px;border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.side-close-btn:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.side-asset-title{font-size:13px;font-weight:bold}
+
+/* SEARCH BAR */
+.search-wrap{padding:12px 20px 0;max-width:1400px;margin:0 auto}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;transition:border-color .2s}
+.search-box:focus-within{border-color:var(--purple)}
+.search-icon{color:var(--muted);font-size:14px;flex-shrink:0}
+.search-input{background:transparent;border:none;outline:none;color:var(--text);font-family:monospace;font-size:12px;flex:1;min-width:0}
+.search-input::placeholder{color:var(--muted2)}
+.search-clear{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px;display:none}
+.search-results{position:absolute;z-index:200;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-top:4px;width:100%;max-height:300px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.search-result-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s}
+.search-result-item:last-child{border-bottom:none}
+.search-result-item:hover{background:var(--bg3)}
+.search-result-ticker{font-weight:bold;font-size:12px;min-width:60px}
+.search-result-name{font-size:11px;color:var(--muted);flex:1}
+.search-result-price{font-size:11px;font-weight:bold;text-align:right}
+.search-result-chg{font-size:10px;text-align:right}
+.search-wrap-inner{position:relative}
+
 /* TOPBAR */
 .topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:100;backdrop-filter:blur(10px)}
 .logo{display:flex;align-items:center;gap:10px}
@@ -194,6 +231,21 @@ tr:hover td{background:var(--bg3)}
   <div class="tab" onclick="switchTab('whales',this)">🐋 Whales</div>
 </div>
 
+<!-- SEARCH BAR -->
+<div class="search-wrap">
+  <div class="search-wrap-inner">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="searchInput" type="text" placeholder="Rechercher un actif... (ex: BTC, Apple, SPY, LVMH)" autocomplete="off" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)">
+      <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+    </div>
+    <div class="search-results" id="searchResults" style="display:none"></div>
+  </div>
+</div>
+
+<!-- APP WRAPPER -->
+<div class="app-wrapper">
+<div class="content-area">
 <div class="main">
 
 <!-- PAGE DASHBOARD -->
@@ -206,11 +258,6 @@ tr:hover td{background:var(--bg3)}
     <div class="card"><div class="kpi-label">Actifs suivis</div><div class="kpi-val cyan" id="kpiAssets">—</div><div class="kpi-sub">crypto + actions + ETF</div></div>
     <div class="card"><div class="kpi-label">Taux EUR/USD</div><div class="kpi-val blue" id="kpiRate">—</div></div>
     <div class="card"><div class="kpi-label">Signaux ACHAT</div><div class="kpi-val green" id="kpiBuy">—</div><div class="kpi-sub">actuellement</div></div>
-  </div>
-
-  <div id="detailSection" style="display:none">
-    <div class="sec-title" id="detailTitle">Détail actif</div>
-    <div id="detailContent"></div>
   </div>
 
   <div class="sec-title">Vue globale</div>
@@ -294,6 +341,20 @@ tr:hover td{background:var(--bg3)}
 </div>
 
 </div><!-- /main -->
+</div><!-- /content-area -->
+
+<!-- PANNEAU LATERAL DETAIL -->
+<div class="side-panel" id="sidePanel">
+  <div class="side-panel-inner">
+    <div class="side-close">
+      <span class="side-asset-title" id="sideTitle">Détail actif</span>
+      <button class="side-close-btn" onclick="closeSidePanel()" title="Fermer">✕</button>
+    </div>
+    <div id="sideContent"></div>
+  </div>
+</div>
+
+</div><!-- /app-wrapper -->
 
 <script>
 // ─── CONFIG ── REMPLACE hhcmoi75-max PAR TON PSEUDO GITHUB ──────────
@@ -391,6 +452,113 @@ function renderWhales() {
   }).join('');
 }
 
+// ─── RECHERCHE ────────────────────────────────────────────────────
+const ALL_ASSETS_META = {};
+
+function buildAssetMeta() {
+  // Construire dictionnaire complet pour la recherche
+  const prices = state?.last_prices || {};
+  const lastByAsset = {};
+  history.slice().reverse().forEach(h => { if (!lastByAsset[h.asset]) lastByAsset[h.asset] = h; });
+
+  [...KNOWN_CRYPTO, ...KNOWN_STOCK, ...KNOWN_ETF].forEach(k => {
+    const p = prices[k];
+    const l = lastByAsset[k];
+    ALL_ASSETS_META[k] = {
+      name:       p?.name ?? l?.name ?? k,
+      type:       getType(k),
+      price_eur:  p?.price_eur ?? l?.price_eur ?? null,
+      change_24h: p?.change_24h ?? l?.change_24h ?? null,
+    };
+  });
+  // Ajouter actifs des données
+  Object.keys(prices).forEach(k => {
+    if (!ALL_ASSETS_META[k]) {
+      ALL_ASSETS_META[k] = {
+        name:       prices[k].name ?? k,
+        type:       prices[k].type ?? 'crypto',
+        price_eur:  prices[k].price_eur,
+        change_24h: prices[k].change_24h,
+      };
+    }
+  });
+}
+
+function onSearch(val) {
+  const q = val.trim().toLowerCase();
+  const clear = document.getElementById('searchClear');
+  const results = document.getElementById('searchResults');
+  clear.style.display = q ? 'block' : 'none';
+
+  if (!q) { results.style.display = 'none'; return; }
+
+  const matches = Object.entries(ALL_ASSETS_META).filter(([k, m]) =>
+    k.toLowerCase().includes(q) ||
+    (m.name || '').toLowerCase().includes(q)
+  ).slice(0, 10);
+
+  if (!matches.length) {
+    results.innerHTML = '<div class="search-result-item"><span class="muted" style="font-size:11px">Aucun résultat pour "' + val + '"</span></div>';
+    results.style.display = 'block';
+    return;
+  }
+
+  results.innerHTML = matches.map(([k, m]) => {
+    const priceStr = m.price_eur != null
+      ? (m.price_eur < 1 ? fmt(m.price_eur,4) : m.price_eur < 100 ? fmt(m.price_eur,2) : fmt(m.price_eur,2))
+      : '—';
+    const chgStr = m.change_24h != null
+      ? `<span class="${m.change_24h>=0?'green':'red'}">${m.change_24h>=0?'+':''}${m.change_24h.toFixed(2)}%</span>`
+      : '';
+    return `<div class="search-result-item" onclick="searchSelect('${k}')">
+      <span class="search-result-ticker">${k} ${typeBadge(m.type)}</span>
+      <span class="search-result-name">${m.name}</span>
+      <div style="text-align:right">
+        <div class="search-result-price">${priceStr}</div>
+        <div class="search-result-chg">${chgStr}</div>
+      </div>
+    </div>`;
+  }).join('');
+  results.style.display = 'block';
+}
+
+function onSearchKey(e) {
+  if (e.key === 'Escape') clearSearch();
+}
+
+function searchSelect(k) {
+  clearSearch();
+  selectAsset(k);
+  // Naviguer vers le bon onglet
+  const type = getType(k);
+  const tabMap = {crypto: 'crypto', stock: 'stocks', stock_eu: 'stocks', etf: 'etfs'};
+  const targetPage = tabMap[type] || 'dashboard';
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => {
+    if (t.getAttribute('onclick') && t.getAttribute('onclick').includes("'" + targetPage + "'")) {
+      switchTab(targetPage, t);
+    }
+  });
+  // Scroll vers la carte
+  setTimeout(() => {
+    const card = document.querySelector('[data-asset="' + k + '"]');
+    if (card) card.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 200);
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+  document.getElementById('searchResults').style.display = 'none';
+}
+
+// Fermer recherche si clic ailleurs
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap-inner')) {
+    document.getElementById('searchResults').style.display = 'none';
+  }
+});
+
 // ─── CHARGEMENT ───────────────────────────────────────────────────
 async function loadData() {
   document.getElementById('statusDot').className = 'dot amber';
@@ -479,7 +647,7 @@ function assetCardHTML(k) {
     ? `H: ${high < 100 ? fmtN(high,2) : fmtN(high,0)}€ L: ${low < 100 ? fmtN(low,2) : fmtN(low,0)}€`
     : '';
 
-  return `<div class="asset-card type-${atype} ${selectedAsset===k?'active':''}" onclick="selectAsset('${k}')">
+  return `<div class="asset-card type-${atype} ${selectedAsset===k?'active':''}" data-asset="${k}" onclick="selectAsset('${k}')">
     <div class="ac-top">
       <div class="ac-left">
         <div class="ac-ticker">${k}${hasPos?'<span class="pos-dot"></span>':''} ${typeBadge(atype)}</div>
@@ -502,88 +670,112 @@ function assetCardHTML(k) {
   </div>`;
 }
 
-// ─── DETAIL PANEL ─────────────────────────────────────────────────
-function selectAsset(k) {
-  selectedAsset = k;
-  // Re-render all cards to update active state
-  renderAllCards();
-
+// ─── PANNEAU LATERAL DETAIL ───────────────────────────────────────
+function buildDetailHTML(k) {
   const l   = history.slice().reverse().find(h => h.asset === k);
   const p   = state?.last_prices?.[k];
   const pos = state?.positions?.[k];
-  if (!l && !p) { document.getElementById('detailSection').style.display = 'none'; return; }
+  if (!l && !p) return '<div class="empty">Aucune donnée disponible</div>';
 
-  document.getElementById('detailSection').style.display = 'block';
-  const name  = p?.name ?? l?.name ?? k;
-  const atype = p?.type ?? l?.type ?? 'crypto';
+  const name     = p?.name ?? l?.name ?? k;
+  const atype    = p?.type ?? l?.type ?? 'crypto';
   const priceEur = p?.price_eur ?? l?.price_eur ?? 0;
-  const chg   = p?.change_24h ?? l?.change_24h ?? 0;
-  const high  = p?.high_24h ?? l?.high_24h ?? 0;
-  const low   = p?.low_24h  ?? l?.low_24h  ?? 0;
-  const vol   = p?.volume_usd ?? l?.volume_usd ?? 0;
-  const rsi   = p?.rsi ?? l?.rsi ?? '—';
-  const score = l?.score ?? 50;
-  const source = p?.source ?? l?.source ?? '';
-  const sl    = priceEur * 0.93;
-  const tp    = priceEur * 1.18;
+  const chg      = p?.change_24h ?? l?.change_24h ?? 0;
+  const high     = p?.high_24h ?? l?.high_24h ?? 0;
+  const low      = p?.low_24h  ?? l?.low_24h  ?? 0;
+  const vol      = p?.volume_usd ?? l?.volume_usd ?? 0;
+  const rsi      = p?.rsi ?? l?.rsi ?? '—';
+  const score    = l?.score ?? 50;
+  const source   = p?.source ?? l?.source ?? '';
+  const sl       = priceEur * 0.93;
+  const tp       = priceEur * 1.18;
+  const ma20     = l?.ma20 ?? 0;
+  const ma50     = l?.ma50 ?? 0;
+  const ma200    = l?.ma200 ?? 0;
+  const btWin    = l?.bt_win_rate;
 
-  document.getElementById('detailTitle').textContent = `${name} (${k}) — Analyse détaillée`;
-  document.getElementById('detailContent').innerHTML = `
-    <div class="detail-panel">
-      <div class="dp-header">
-        <div>
-          <div class="dp-title">${name} <span class="muted">${k}</span> ${typeBadge(atype)}</div>
-          <div class="dp-subtitle" style="margin-top:5px">${tendBadge(l?.tendance||'NEUTRE')} &nbsp; <span class="source-tag">${source}</span></div>
-        </div>
-        <div class="dp-signal">
-          <div style="font-size:20px;font-weight:bold;color:${scoreColor(score)}">${score}<span style="font-size:12px;color:var(--muted)">/100</span></div>
-          <div style="margin-top:4px"><span class="signal-badge ${sigClass(l?.signal||'HOLD')}" style="font-size:11px;padding:3px 12px">${sigLabel(l?.signal||'HOLD')}</span></div>
-          <div style="font-size:10px;color:var(--muted);margin-top:4px">Confiance ${l?.confiance||50}%</div>
-        </div>
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:15px;font-weight:bold">${name} <span class="muted" style="font-size:11px">${k}</span> ${typeBadge(atype)}</div>
+        <div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">${tendBadge(l?.tendance||'NEUTRE')} <span class="source-tag">${source}</span></div>
       </div>
-
-      <div class="dp-grid-wide">
-        <div class="dp-item"><div class="dp-label">Prix actuel</div><div class="dp-val ${priceEur>0?'':'muted'}">${priceEur < 100 ? fmt(priceEur,4) : fmt(priceEur,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Variation 24h</div><div class="dp-val ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
-        <div class="dp-item"><div class="dp-label">High 24h</div><div class="dp-val sm">${high < 100 ? fmt(high,4) : fmt(high,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Low 24h</div><div class="dp-val sm">${low < 100 ? fmt(low,4) : fmt(low,2)}</div></div>
-        <div class="dp-item"><div class="dp-label">Volume 24h</div><div class="dp-val sm">${vol > 1e9 ? (vol/1e9).toFixed(1)+'B$' : vol > 1e6 ? (vol/1e6).toFixed(1)+'M$' : fmtN(vol,0)+'$'}</div></div>
+      <div style="text-align:right">
+        <div style="font-size:22px;font-weight:bold;color:${scoreColor(score)}">${score}<span style="font-size:11px;color:var(--muted)">/100</span></div>
+        <span class="signal-badge ${sigClass(l?.signal||'HOLD')}" style="font-size:11px">${sigLabel(l?.signal||'HOLD')}</span>
       </div>
+    </div>
 
-      <div class="dp-grid">
-        <div class="dp-item"><div class="dp-label">RSI</div><div class="dp-val" style="color:${typeof rsi==='number'?rsiColor(rsi):'var(--muted)'}">${rsi} <span style="font-size:10px;color:var(--muted)">${l?.rsi_analyse||''}</span></div></div>
-        <div class="dp-item"><div class="dp-label">Support estimé</div><div class="dp-val sm green">${l?.support ? fmt(l.support,4) : '—'}</div></div>
-        <div class="dp-item"><div class="dp-label">Résistance estimée</div><div class="dp-val sm red">${l?.resistance ? fmt(l.resistance,4) : '—'}</div></div>
-        <div class="dp-item"><div class="dp-label">Stop-loss (-7%)</div><div class="dp-val sm red">${fmt(sl,2)}</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <div class="dp-item"><div class="dp-label">Prix</div><div class="dp-val">${priceEur < 1 ? fmt(priceEur,6) : priceEur < 100 ? fmt(priceEur,4) : fmt(priceEur,2)}</div></div>
+      <div class="dp-item"><div class="dp-label">Variation 24h</div><div class="dp-val ${chg>=0?'green':'red'}">${chg>=0?'+':''}${chg.toFixed(2)}%</div></div>
+      <div class="dp-item"><div class="dp-label">High 24h</div><div class="dp-val sm">${high < 100 ? fmt(high,4) : fmt(high,2)}</div></div>
+      <div class="dp-item"><div class="dp-label">Low 24h</div><div class="dp-val sm">${low < 100 ? fmt(low,4) : fmt(low,2)}</div></div>
+      <div class="dp-item"><div class="dp-label">Volume</div><div class="dp-val sm">${vol > 1e9 ? (vol/1e9).toFixed(1)+'B$' : vol > 1e6 ? (vol/1e6).toFixed(1)+'M$' : fmtN(vol,0)+'$'}</div></div>
+      <div class="dp-item"><div class="dp-label">RSI</div><div class="dp-val" style="color:${typeof rsi==='number'?rsiColor(rsi):'var(--muted)'}">${rsi} <span style="font-size:9px;color:var(--muted)">${l?.rsi_analyse||''}</span></div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <div class="dp-item"><div class="dp-label">Stop-loss (-7%)</div><div class="dp-val sm red">${fmt(sl,2)}</div></div>
+      <div class="dp-item"><div class="dp-label">Take-profit (+18%)</div><div class="dp-val sm green">${fmt(tp,2)}</div></div>
+      ${ma20 ? `<div class="dp-item"><div class="dp-label">MA20</div><div class="dp-val sm">${fmt(ma20,2)}</div></div>` : ''}
+      ${ma50 ? `<div class="dp-item"><div class="dp-label">MA50</div><div class="dp-val sm">${fmt(ma50,2)}</div></div>` : ''}
+      ${ma200 ? `<div class="dp-item"><div class="dp-label">MA200</div><div class="dp-val sm">${fmt(ma200,2)}</div></div>` : ''}
+      ${btWin != null ? `<div class="dp-item"><div class="dp-label">Backtest win</div><div class="dp-val sm ${btWin>=55?'green':'red'}">${btWin}%</div></div>` : ''}
+    </div>
+
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Scores</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px">
+      ${[['Tech',l?.score_technique],['Macro',l?.score_macro],['Sentiment',l?.score_sentiment],['Momentum',l?.score_momentum],['Volume',l?.score_volume]].map(([lbl,v])=>`
+        <div class="score-item">
+          <div class="score-label">${lbl}</div>
+          <div class="score-val" style="color:${scoreColor(v??50)};font-size:14px">${v??'—'}</div>
+          <div class="score-mini-bar"><div class="score-mini-fill" style="width:${v??50}%;background:${scoreColor(v??50)}"></div></div>
+        </div>`).join('')}
+    </div>
+
+    ${l?.raison ? `<div class="analysis-box" style="margin-bottom:6px"><div class="abox-title">📊 Analyse IA</div>${l.raison}</div>` : ''}
+    ${l?.risque ? `<div class="analysis-box risk" style="margin-bottom:6px"><div class="abox-title">⚠ Risque</div>${l.risque}</div>` : ''}
+    ${l?.opportunite ? `<div class="analysis-box opp" style="margin-bottom:10px"><div class="abox-title">💡 Opportunité</div>${l.opportunite}</div>` : ''}
+
+    ${pos ? `<div class="dp-item" style="border-color:var(--purple)">
+      <div class="dp-label purple">Position ouverte — ${fmt(pos.amount_eur,2)}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:5px;font-size:11px">
+        <span>Entrée: <strong>${fmt(pos.entry_price_eur,2)}</strong></span>
+        <span class="${priceEur > pos.entry_price_eur ? 'green' : 'red'}">PnL: ${(((priceEur-pos.entry_price_eur)/pos.entry_price_eur)*100).toFixed(2)}%</span>
       </div>
+    </div>` : ''}
+  `;
+}
 
-      <div class="dp-item" style="margin-bottom:10px"><div class="dp-label">Take-profit (+18%)</div><div class="dp-val green">${fmt(tp,2)}</div></div>
+function selectAsset(k) {
+  selectedAsset = k;
 
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Scores par composante</div>
-      <div class="scores-grid">
-        ${[['Technique',l?.score_technique],['Sentiment',l?.score_sentiment],['Macro',l?.score_macro],['Momentum',l?.score_momentum],['Volume',l?.score_volume]].map(([lbl,v])=>`
-          <div class="score-item">
-            <div class="score-label">${lbl}</div>
-            <div class="score-val" style="color:${scoreColor(v??50)}">${v??'—'}</div>
-            <div class="score-mini-bar"><div class="score-mini-fill" style="width:${v??50}%;background:${scoreColor(v??50)}"></div></div>
-          </div>`).join('')}
-      </div>
+  // Mettre a jour cartes actives sans re-render complet
+  document.querySelectorAll('.asset-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.asset === k);
+  });
 
-      <div class="analysis-row">
-        <div class="analysis-box"><div class="abox-title">📊 Analyse IA</div>${l?.raison||'Analyse non disponible'}</div>
-        <div class="analysis-box risk"><div class="abox-title">⚠ Risque principal</div>${l?.risque||'Non identifié'}</div>
-        <div class="analysis-box opp"><div class="abox-title">💡 Opportunité</div>${l?.opportunite||'Non identifiée'}</div>
-      </div>
+  // Ouvrir panneau lateral
+  const panel = document.getElementById('sidePanel');
+  const title = document.getElementById('sideTitle');
+  const content = document.getElementById('sideContent');
+  const l = history.slice().reverse().find(h => h.asset === k);
+  const p = state?.last_prices?.[k];
+  const name = p?.name ?? l?.name ?? k;
 
-      ${pos ? `<div class="dp-item" style="margin-top:10px;border-color:var(--purple)">
-        <div class="dp-label purple">Position ouverte — ${fmt(pos.amount_eur,2)}</div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:11px">
-          <span>Entrée : <strong>${fmt(pos.entry_price_eur,2)}</strong></span>
-          <span class="${priceEur > pos.entry_price_eur ? 'green' : 'red'}">PnL : ${(((priceEur - pos.entry_price_eur) / pos.entry_price_eur)*100).toFixed(2)}%</span>
-          <span class="muted">Ouvert : ${new Date(pos.entry_date).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
-        </div>
-      </div>` : ''}
-    </div>`;
+  title.textContent = name + ' (' + k + ')';
+  content.innerHTML = buildDetailHTML(k);
+  panel.classList.add('open');
+
+  // Scroll panel to top
+  document.querySelector('.side-panel').scrollTop = 0;
+}
+
+function closeSidePanel() {
+  document.getElementById('sidePanel').classList.remove('open');
+  selectedAsset = null;
+  document.querySelectorAll('.asset-card').forEach(c => c.classList.remove('active'));
 }
 
 // Listes de secours pour typage des actifs
@@ -775,9 +967,11 @@ function render() {
   renderCryptoCards();
   renderStockCards();
   renderEtfCards();
+  buildAssetMeta();
   if (document.getElementById('page-whales').classList.contains('active')) renderWhales();
 
-  if (selectedAsset) selectAsset(selectedAsset);
+  // Refresh side panel if open
+  if (selectedAsset) buildDetailHTML(selectedAsset) && (document.getElementById('sideContent').innerHTML = buildDetailHTML(selectedAsset));
   if (document.getElementById('page-history').classList.contains('active')) renderHistory();
   if (document.getElementById('page-positions').classList.contains('active')) renderPositions();
 }
