@@ -1,4 +1,4 @@
-# HAOUD BITPANDA AI - Agent IA autonome
+# HAOUD TRADING IA - Agent IA autonome
 # GitHub Actions cron toutes les 15 min
 # Sources : CoinGecko (crypto) + Yahoo Finance (actions/ETF) + Claude AI
 
@@ -324,6 +324,14 @@ def run_bot():
         analysis     = analyze_with_claude(asset, price_data)
         global_score = compute_global_score(analysis)
         signal       = analysis.get("signal", "HOLD")
+
+        # Securite : forcer HOLD si le score contredit le signal Claude
+        if signal == "BUY"  and global_score < MIN_SCORE_BUY:
+            signal = "HOLD"
+            print("  [OVERRIDE] Signal BUY ignore - score " + str(global_score) + " < " + str(MIN_SCORE_BUY))
+        if signal == "SELL" and global_score > MAX_SCORE_SELL:
+            signal = "HOLD"
+            print("  [OVERRIDE] Signal SELL ignore - score " + str(global_score) + " > " + str(MAX_SCORE_SELL))
 
         print("  -> Score: " + str(global_score) + " | " + signal + " | " + analysis.get("tendance", "?"))
 
