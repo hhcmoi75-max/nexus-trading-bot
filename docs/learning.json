@@ -1,1 +1,27 @@
-{"version":2,"weights":{"technique":0.55,"macro":0.20,"sentiment":0.15,"onchain":0.10},"thresholds":{"MIN_SCORE_BUY":70,"MAX_SCORE_SELL":40,"RSI_OVERSOLD":35,"RSI_OVERBOUGHT":65,"STOP_LOSS_PCT":0.07,"TAKE_PROFIT_PCT":0.18},"asset_patterns":{},"trade_log":[],"stats":{"total_closed":0,"wins":0,"losses":0,"win_rate":0,"avg_pnl":0},"last_update":null}
+{
+  "version": 2,
+  "weights": {
+    "technique": 0.55,
+    "macro": 0.2,
+    "sentiment": 0.15,
+    "onchain": 0.1
+  },
+  "thresholds": {
+    "MIN_SCORE_BUY": 70,
+    "MAX_SCORE_SELL": 40,
+    "RSI_OVERSOLD": 35,
+    "RSI_OVERBOUGHT": 65,
+    "STOP_LOSS_PCT": 0.07,
+    "TAKE_PROFIT_PCT": 0.18
+  },
+  "asset_patterns": {},
+  "trade_log": [],
+  "stats": {
+    "total_closed": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0,
+    "avg_pnl": 0
+  },
+  "last_update": "2026-03-14T15:23:00.700020"
+}
