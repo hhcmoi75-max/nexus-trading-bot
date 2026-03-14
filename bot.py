@@ -162,6 +162,23 @@ WISDOM_DAY_OF_WEEK  = 0   # Lundi = distillation hebdo
 ML_MIN_TRADES = 20
 
 # ============================================================
+# POLYGON.IO - API BACKUP POUR ACTIONS/ETF
+# ============================================================
+POLYGON_KEY = os.environ.get("POLYGON_API_KEY", "")
+# Cle gratuite sur polygon.io : 5 req/min, donnees fin de journee
+# Utilise seulement si Yahoo Finance echoue
+
+# ============================================================
+# ARBITRAGE AUTOMATISE
+# ============================================================
+ARB_AUTO_EXECUTE    = True    # True = execution automatique si spread > seuil
+ARB_AUTO_MIN_SPREAD = 0.005   # 0.5% minimum pour execution automatique
+BINANCE_KEY    = os.environ.get("BINANCE_API_KEY", "")
+BINANCE_SECRET = os.environ.get("BINANCE_API_SECRET", "")
+CRYPTOCOM_KEY    = os.environ.get("CRYPTOCOM_API_KEY", "")
+CRYPTOCOM_SECRET = os.environ.get("CRYPTOCOM_API_SECRET", "")
+
+# ============================================================
 # AMELIORATION 1 : TRAILING STOP + TAKE-PROFIT PAR PALIERS
 # ============================================================
 TRAILING_STOP_ENABLED  = True
@@ -1870,6 +1887,311 @@ def send_arbitrage_alerts(opportunities):
         send_telegram(msg)
 
 # ============================================================
+# AMELIORATION 9 : POLYGON.IO BACKUP POUR ACTIONS/ETF
+# ============================================================
+
+def get_polygon_price(ticker, name, asset_type):
+    """
+    Backup Polygon.io si Yahoo Finance echoue.
+    API gratuite : donnees fin de journee J-1, 5 req/min.
+    Cle gratuite sur https://polygon.io
+    """
+    if not POLYGON_KEY:
+        return None
+    try:
+        from datetime import timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        r = requests.get(
+            "https://api.polygon.io/v2/aggs/ticker/" + ticker +
+            "/range/1/day/2024-01-01/" + yesterday +
+            "?adjusted=true&sort=asc&limit=365&apiKey=" + POLYGON_KEY,
+            timeout=10
+        )
+        data = r.json()
+        if data.get("status") == "ERROR" or not data.get("results"):
+            return None
+        results = data["results"]
+        closes  = [r["c"] for r in results if r.get("c")]
+        volumes = [r["v"] for r in results if r.get("v")]
+        if not closes:
+            return None
+        last    = results[-1]
+        price   = float(last["c"])
+        prev    = float(results[-2]["c"]) if len(results) >= 2 else price
+        change  = ((price - prev) / prev * 100) if prev else 0
+        print("  [POLYGON] " + ticker + " = " + str(round(price,2)) + " USD (backup)")
+        return {
+            "price_usd":  price,
+            "change_24h": round(change, 2),
+            "volume_usd": float(last.get("v", 0)) * price,
+            "high_24h":   float(last.get("h", price)),
+            "low_24h":    float(last.get("l", price)),
+            "closes":     closes,
+            "volumes":    volumes,
+            "name":       name,
+            "type":       asset_type,
+            "source":     "Polygon.io"
+        }
+    except Exception as e:
+        print("  [POLYGON] " + ticker + " erreur: " + str(e))
+        return None
+
+def get_stocks_with_fallback(tickers_map, asset_type):
+    """
+    Essaie Yahoo Finance en batch.
+    Si resultat < 50% des actifs attendus -> fallback Polygon.io
+    """
+    prices = get_yahoo_batch_quotes(tickers_map, asset_type)
+    success_rate = len(prices) / len(tickers_map) if tickers_map else 0
+
+    if success_rate < 0.5 and POLYGON_KEY:
+        print("  [FALLBACK] Yahoo Finance insuffisant (" +
+              str(round(success_rate*100)) + "%) -> Polygon.io backup")
+        missing = [k for k in tickers_map if k not in prices]
+        for key in missing[:20]:  # Max 20 pour respecter limite 5 req/min
+            info   = tickers_map[key]
+            result = get_polygon_price(info["ticker"], info["name"], asset_type)
+            if result:
+                prices[key] = result
+            time.sleep(0.5)  # Respecter 5 req/min Polygon
+        print("  [FALLBACK] " + str(len(prices)) + "/" +
+              str(len(tickers_map)) + " actifs apres fallback")
+    return prices
+
+# ============================================================
+# AMELIORATION 10 : ML BOOTSTRAP (acceleration apprentissage)
+# ============================================================
+
+def bootstrap_ml_from_history(history, learning_data):
+    """
+    Simule des trades clotures a partir de l historique existant
+    pour accelerer l activation du ML sans attendre des vrais trades.
+
+    Logique : pour chaque signal BUY dans l historique, on cherche
+    le prix de sortie naturelle (+18% TP ou -7% SL) sur les donnees suivantes.
+    """
+    if len(history) < 30:
+        print("  [BOOTSTRAP] Historique insuffisant (" + str(len(history)) + " entrees)")
+        return learning_data
+
+    trade_log    = learning_data.get("trade_log", [])
+    existing_ids = set(t.get("entry_time","")[:13] + t.get("asset","") for t in trade_log)
+
+    simulated = 0
+    # Grouper l historique par actif
+    by_asset = {}
+    for entry in history:
+        asset = entry.get("asset","")
+        if asset not in by_asset:
+            by_asset[asset] = []
+        by_asset[asset].append(entry)
+
+    for asset, entries in by_asset.items():
+        if len(entries) < 5:
+            continue
+        # Chercher les signaux BUY passes
+        for i, entry in enumerate(entries):
+            if entry.get("signal") != "BUY" or entry.get("score", 0) < 65:
+                continue
+            # Eviter les doublons
+            trade_id = entry.get("timestamp","")[:13] + asset
+            if trade_id in existing_ids:
+                continue
+            entry_price = entry.get("price_eur", 0)
+            if entry_price <= 0:
+                continue
+
+            # Chercher la sortie dans les entrees suivantes (max 30 cycles)
+            exit_price = None
+            exit_action = "HOLD"
+            sl = entry_price * 0.93   # -7%
+            tp = entry_price * 1.18   # +18%
+
+            for future in entries[i+1:i+30]:
+                future_price = future.get("price_eur", 0)
+                if future_price <= 0:
+                    continue
+                if future_price >= tp:
+                    exit_price  = future_price
+                    exit_action = "TAKE_PROFIT"
+                    break
+                elif future_price <= sl:
+                    exit_price  = future_price
+                    exit_action = "STOP_LOSS"
+                    break
+
+            if exit_price is None:
+                # Pas de sortie trouvee -> utiliser dernier prix connu
+                last = entries[min(i+10, len(entries)-1)]
+                exit_price = last.get("price_eur", entry_price)
+                exit_action = "TIMEOUT"
+
+            pnl_pct = round((exit_price - entry_price) / entry_price * 100, 2)
+            trade_rec = {
+                "asset":           asset,
+                "action":          exit_action,
+                "entry_price_eur": entry_price,
+                "exit_price_eur":  round(exit_price, 4),
+                "pnl_pct":         pnl_pct,
+                "entry_time":      entry.get("timestamp",""),
+                "exit_time":       datetime.now().isoformat(),
+                "entry_rsi":       entry.get("rsi", 50),
+                "entry_score":     entry.get("score", 50),
+                "entry_change_24h":entry.get("change_24h", 0),
+                "simulated":       True,
+                "entry_snapshot":  {
+                    "score_technique": entry.get("score_technique", 50),
+                    "score_macro":     entry.get("score_macro", 50),
+                    "score_sentiment": entry.get("score_sentiment", 50),
+                    "onchain_score":   entry.get("onchain_score"),
+                    "score":           entry.get("score", 50),
+                }
+            }
+            trade_log.append(trade_rec)
+            existing_ids.add(trade_id)
+            simulated += 1
+
+            if simulated >= 50:  # Max 50 trades simules
+                break
+        if simulated >= 50:
+            break
+
+    if simulated > 0:
+        print("  [BOOTSTRAP] " + str(simulated) + " trades simules depuis l historique")
+        # Recalculer les stats
+        wins   = len([t for t in trade_log if t.get("pnl_pct", 0) > 0])
+        losses = len([t for t in trade_log if t.get("pnl_pct", 0) <= 0])
+        total  = wins + losses
+        all_pnl = [t.get("pnl_pct", 0) for t in trade_log]
+        learning_data["trade_log"] = trade_log[-200:]
+        learning_data["stats"]     = {
+            "total_closed": total,
+            "wins":         wins,
+            "losses":       losses,
+            "win_rate":     round(wins/total*100, 1) if total > 0 else 0,
+            "avg_pnl":      round(sum(all_pnl)/len(all_pnl), 2) if all_pnl else 0,
+            "total_pnl":    round(sum(all_pnl), 2),
+            "best_trade":   round(max(all_pnl), 2) if all_pnl else 0,
+            "worst_trade":  round(min(all_pnl), 2) if all_pnl else 0,
+            "simulated":    simulated,
+        }
+        send_telegram(
+            "ML BOOTSTRAP - HAOUD TRADING IA\n"
+            + str(simulated) + " trades simules depuis l historique\n"
+            "Win rate initial: " + str(learning_data["stats"]["win_rate"]) + "%\n"
+            "Le ML va s activer au prochain cycle !"
+        )
+    else:
+        print("  [BOOTSTRAP] Aucun nouveau trade a simuler")
+
+    return learning_data
+
+# ============================================================
+# AMELIORATION 11 : ARBITRAGE AUTOMATISE
+# ============================================================
+
+def execute_binance_order(symbol, side, amount_usdt):
+    """Execute un ordre market sur Binance"""
+    if not BINANCE_KEY or not BINANCE_SECRET:
+        return None
+    try:
+        import hmac, hashlib
+        timestamp = int(time.time() * 1000)
+        params    = "symbol=" + symbol + "&side=" + side + "&type=MARKET&quoteOrderQty=" + str(amount_usdt) + "&timestamp=" + str(timestamp)
+        signature = hmac.new(BINANCE_SECRET.encode(), params.encode(), hashlib.sha256).hexdigest()
+        r = requests.post(
+            "https://api.binance.com/api/v3/order",
+            headers={"X-MBX-APIKEY": BINANCE_KEY},
+            data=params + "&signature=" + signature,
+            timeout=10
+        )
+        result = r.json()
+        if result.get("orderId"):
+            print("  [BINANCE ORDER] " + side + " " + symbol + " -> orderId=" + str(result["orderId"]))
+            return result
+        else:
+            print("  [BINANCE ORDER] Erreur: " + str(result))
+            return None
+    except Exception as e:
+        print("  [BINANCE ORDER] " + str(e))
+        return None
+
+def execute_bitpanda_arb_order(ticker, side, amount_eur):
+    """Execute un ordre sur Bitpanda pour l arbitrage"""
+    return place_order_bitpanda(ticker, side, amount_eur)
+
+def execute_arbitrage(opportunity, eur_rate):
+    """
+    Execute un arbitrage automatique si le spread est suffisant.
+    Achete sur l exchange le moins cher, vend sur le plus cher.
+    """
+    ticker       = opportunity["ticker"]
+    buy_ex       = opportunity["buy_exchange"]
+    sell_ex      = opportunity["sell_exchange"]
+    spread       = opportunity["spread_net_pct"]
+    buy_price    = opportunity["buy_price_eur"]
+
+    # Montant fixe par arbitrage : 50 EUR
+    arb_amount_eur  = 50
+    arb_amount_usdt = round(arb_amount_eur / eur_rate, 2)
+
+    print("  [ARB AUTO] EXECUTION " + ticker +
+          " | Acheter " + buy_ex + " @ " + str(buy_price) + "EUR" +
+          " | Vendre " + sell_ex +
+          " | Spread +" + str(spread) + "%")
+
+    buy_result  = None
+    sell_result = None
+
+    # --- ACHAT sur l exchange le moins cher ---
+    if buy_ex == "Bitpanda":
+        buy_result = execute_bitpanda_arb_order(ticker, "BUY", arb_amount_eur)
+    elif buy_ex == "Binance":
+        binance_symbol = TICKER_MAP["Binance"].get(ticker, ticker + "USDT")
+        buy_result = execute_binance_order(binance_symbol, "BUY", arb_amount_usdt)
+
+    if not buy_result:
+        print("  [ARB AUTO] ECHEC achat sur " + buy_ex)
+        return False
+
+    # --- VENTE sur l exchange le plus cher ---
+    time.sleep(0.5)  # Petit delai pour eviter les rejets
+    if sell_ex == "Bitpanda":
+        sell_result = execute_bitpanda_arb_order(ticker, "SELL", arb_amount_eur)
+    elif sell_ex == "Binance":
+        binance_symbol = TICKER_MAP["Binance"].get(ticker, ticker + "USDT")
+        sell_result = execute_binance_order(binance_symbol, "SELL", arb_amount_usdt)
+    elif sell_ex == "CryptoCom":
+        # Crypto.com : alerte manuelle car ordre auto non implemente
+        send_telegram(
+            "ARB CRYPTO.COM MANUEL REQUIS\n"
+            "VENDRE " + ticker + " sur Crypto.com\n"
+            "Montant: " + str(arb_amount_eur) + "EUR\n"
+            "Prix cible: " + str(opportunity["sell_price_eur"]) + "EUR\n"
+            "Gain estime: +" + str(opportunity["profit_50eur"]) + "EUR"
+        )
+        return True  # Achat fait, vente manuelle demandee
+
+    if sell_result:
+        profit_est = round(arb_amount_eur * spread / 100, 2)
+        send_telegram(
+            "ARB EXECUTE - HAOUD TRADING IA\n"
+            + ticker + " | Spread: +" + str(spread) + "%\n"
+            "Achete: " + buy_ex + " @ " + str(buy_price) + "EUR\n"
+            "Vendu: " + sell_ex + " @ " + str(opportunity["sell_price_eur"]) + "EUR\n"
+            "Gain estime: +" + str(profit_est) + "EUR"
+        )
+        return True
+    else:
+        send_telegram(
+            "ARB INCOMPLET - HAOUD TRADING IA\n"
+            "ATTENTION: Achat fait sur " + buy_ex + " mais vente echouee sur " + sell_ex + "\n"
+            "VENDRE MANUELLEMENT: " + ticker + " sur " + sell_ex + " !"
+        )
+        return False
+
+
+# ============================================================
 # BOT PRINCIPAL v5.0
 # ============================================================
 
@@ -1911,11 +2233,11 @@ def run_bot():
     print("[CRYPTO] CoinGecko...")
     all_prices = {}
     all_prices.update(get_crypto_prices())
-    print("\n[ACTIONS] Yahoo Finance batch...")
-    all_prices.update(get_yahoo_batch_quotes(STOCK_ASSETS, "stock"))
-    all_prices.update(get_yahoo_batch_quotes(EUROPE_ASSETS, "stock_eu"))
-    print("\n[ETFs] Yahoo Finance batch...")
-    all_prices.update(get_yahoo_batch_quotes(ETF_ASSETS, "etf"))
+    print("\n[ACTIONS] Yahoo Finance + Polygon backup...")
+    all_prices.update(get_stocks_with_fallback(STOCK_ASSETS, "stock"))
+    all_prices.update(get_stocks_with_fallback(EUROPE_ASSETS, "stock_eu"))
+    print("\n[ETFs] Yahoo Finance + Polygon backup...")
+    all_prices.update(get_stocks_with_fallback(ETF_ASSETS, "etf"))
 
     # --- On-chain ---
     print("\n[ON-CHAIN]...")
@@ -1948,8 +2270,34 @@ def run_bot():
     # --- ARBITRAGE MULTI-EXCHANGE ---
     print("\n[ARBITRAGE] Scan Bitpanda + Binance + Crypto.com...")
     arb_opportunities = detect_arbitrage_opportunities(eur_rate)
-    send_arbitrage_alerts(arb_opportunities)
-    print("  [ARB] " + str(len(arb_opportunities)) + " opportunite(s) detectee(s)")
+    arb_executed = 0
+
+    if arb_opportunities:
+        for opp in arb_opportunities:
+            spread = opp.get("spread_net_pct", 0)
+            # Execution automatique si spread > 0.5%
+            if ARB_AUTO_EXECUTE and spread >= ARB_AUTO_MIN_SPREAD * 100 and not DRY_RUN:
+                print("  [ARB AUTO] Spread " + str(spread) + "% >= seuil -> execution")
+                success = execute_arbitrage(opp, eur_rate)
+                if success:
+                    arb_executed += 1
+            elif ARB_AUTO_EXECUTE and spread >= ARB_AUTO_MIN_SPREAD * 100 and DRY_RUN:
+                print("  [ARB DRY RUN] Spread " + str(spread) + "% -> simulation (DRY_RUN=True)")
+                send_telegram(
+                    "[SIMULATION] ARB " + opp["ticker"] + " | +" + str(spread) + "%\n"
+                    "Achat: " + opp["buy_exchange"] + " @ " + str(opp["buy_price_eur"]) + "EUR\n"
+                    "Vente: " + opp["sell_exchange"] + " @ " + str(opp["sell_price_eur"]) + "EUR\n"
+                    "Gain estime: +" + str(opp["profit_50eur"]) + "EUR\n"
+                    "(Mode simulation - passer DRY_RUN=False pour executer)"
+                )
+                arb_executed += 1
+
+        # Alertes pour les opportunites non executees
+        non_executed = [o for o in arb_opportunities if o["spread_net_pct"] < ARB_AUTO_MIN_SPREAD * 100]
+        if non_executed:
+            send_arbitrage_alerts(non_executed)
+
+    print("  [ARB] " + str(len(arb_opportunities)) + " opp | " + str(arb_executed) + " executee(s)")
 
     # --- Backtest ---
     print("\n[BACKTEST]...")
@@ -1999,9 +2347,16 @@ def run_bot():
     weights = updated_weights
     save_json(PARAMS_FILE, params)
 
+    # --- ML BOOTSTRAP : Acceleration depuis l historique ---
+    print("\n[ML BOOTSTRAP] Simulation trades historiques...")
+    history_all = load_json(HISTORY_FILE, [])
+    closed_count = len(learning_data.get("trade_log", []))
+    if closed_count < ML_MIN_TRADES and len(history_all) >= 30:
+        learning_data = bootstrap_ml_from_history(history_all, learning_data)
+        save_json(LEARNING_FILE, learning_data)
+
     # --- DEEP LEARNING : Entrainement ML ---
     print("\n[ML] Deep Learning...")
-    history_all = load_json(HISTORY_FILE, [])
     ml_model, ml_scaler = train_ml_model(history_all)
     if ml_model is None:
         ml_model, ml_scaler = load_ml_model()
