@@ -507,66 +507,101 @@ def get_crypto_prices():
         print("  [ERREUR CoinGecko] " + str(e))
     return prices
 
-def get_yahoo_price(ticker, name, asset_type):
+def get_yahoo_price_single(ticker, name, asset_type):
+    """Recupere 1 an d historique pour un seul actif (pour le calcul technique)"""
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         r = requests.get(
             "https://query1.finance.yahoo.com/v8/finance/chart/" + ticker + "?interval=1d&range=1y",
-            headers=headers, timeout=12
+            headers=headers, timeout=10
         )
         data    = r.json()
         result  = data["chart"]["result"][0]
         meta    = result["meta"]
-        price   = float(meta.get("regularMarketPrice", 0))
-        prev    = float(meta.get("chartPreviousClose", meta.get("previousClose", price)))
-        change  = ((price - prev) / prev * 100) if prev else 0
         closes  = result.get("indicators", {}).get("quote", [{}])[0].get("close", [])
         closes  = [c for c in closes if c is not None]
         volumes = result.get("indicators", {}).get("quote", [{}])[0].get("volume", [])
         volumes = [v for v in volumes if v is not None]
-        return {
-            "price_usd":  price,
-            "change_24h": round(change, 2),
-            "volume_usd": int(meta.get("regularMarketVolume", 0)) * price,
-            "high_24h":   float(meta.get("regularMarketDayHigh", price)),
-            "low_24h":    float(meta.get("regularMarketDayLow", price)),
-            "closes":     closes,
-            "volumes":    volumes,
-            "name":       name,
-            "type":       asset_type,
-            "source":     "Yahoo Finance 1an"
-        }
+        return closes, volumes
     except:
-        return None
+        return [], []
+
+def get_yahoo_batch_quotes(tickers_map, asset_type):
+    """
+    Recupere les prix en temps reel pour TOUS les tickers en 1 seule requete.
+    tickers_map = {key: {"ticker": t, "name": n}}
+    """
+    prices = {}
+    # Yahoo Finance v7 supporte les requetes batch
+    all_tickers = [info["ticker"] for info in tickers_map.values()]
+    # Splitter en chunks de 20 pour eviter les timeouts
+    chunk_size = 20
+    chunks = [all_tickers[i:i+chunk_size] for i in range(0, len(all_tickers), chunk_size)]
+    ticker_to_key = {info["ticker"]: key for key, info in tickers_map.items()}
+
+    for chunk in chunks:
+        try:
+            symbols = ",".join(chunk)
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            r = requests.get(
+                "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + symbols,
+                headers=headers, timeout=15
+            )
+            data = r.json()
+            quotes = data.get("quoteResponse", {}).get("result", [])
+            for q in quotes:
+                ticker = q.get("symbol", "")
+                key    = ticker_to_key.get(ticker)
+                if not key:
+                    continue
+                price  = float(q.get("regularMarketPrice", 0))
+                prev   = float(q.get("regularMarketPreviousClose", price))
+                change = ((price - prev) / prev * 100) if prev else 0
+                prices[key] = {
+                    "price_usd":  price,
+                    "change_24h": round(change, 2),
+                    "volume_usd": float(q.get("regularMarketVolume", 0)) * price,
+                    "high_24h":   float(q.get("regularMarketDayHigh", price)),
+                    "low_24h":    float(q.get("regularMarketDayLow", price)),
+                    "closes":     [],
+                    "volumes":    [],
+                    "name":       tickers_map[key]["name"],
+                    "type":       asset_type,
+                    "source":     "Yahoo Finance LIVE"
+                }
+            print("  [BATCH] " + str(len(quotes)) + "/" + str(len(chunk)) + " quotes OK")
+            time.sleep(0.3)
+        except Exception as e:
+            print("  [BATCH ERREUR] " + str(e))
+            time.sleep(1)
+
+    # Recuperer historique 1 an en parallele (uniquement pour les actifs obtenus)
+    print("  [HISTORIQUE] Recuperation 1 an pour " + str(len(prices)) + " actifs...")
+    for key, data in prices.items():
+        ticker = tickers_map[key]["ticker"]
+        closes, volumes = get_yahoo_price_single(ticker, data["name"], asset_type)
+        if closes:
+            data["closes"]  = closes
+            data["volumes"] = volumes
+        time.sleep(0.1)
+
+    return prices
 
 def get_all_stock_prices():
     prices = {}
-    # US stocks
-    print("  Actions US...")
-    for key, info in STOCK_ASSETS.items():
-        result = get_yahoo_price(info["ticker"], info["name"], "stock")
-        if result:
-            prices[key] = result
-            print("  [OK] " + key + " = " + str(round(result["price_usd"], 2)) + " USD")
-        time.sleep(0.25)
-    # Europe
-    print("  Actions Europe (CAC40+DAX)...")
-    for key, info in EUROPE_ASSETS.items():
-        result = get_yahoo_price(info["ticker"], info["name"], "stock_eu")
-        if result:
-            prices[key] = result
-            print("  [OK] " + key + " = " + str(round(result["price_usd"], 2)) + " USD")
-        time.sleep(0.25)
+    print("  Actions US (" + str(len(STOCK_ASSETS)) + " actifs en batch)...")
+    us = get_yahoo_batch_quotes(STOCK_ASSETS, "stock")
+    prices.update(us)
+    print("  Actions Europe (" + str(len(EUROPE_ASSETS)) + " actifs en batch)...")
+    eu = get_yahoo_batch_quotes(EUROPE_ASSETS, "stock_eu")
+    prices.update(eu)
+    print("  [STOCKS] " + str(len(prices)) + " actifs recuperes")
     return prices
 
 def get_all_etf_prices():
-    prices = {}
-    for key, info in ETF_ASSETS.items():
-        result = get_yahoo_price(info["ticker"], info["name"], "etf")
-        if result:
-            prices[key] = result
-            print("  [OK] " + key)
-        time.sleep(0.25)
+    print("  ETFs (" + str(len(ETF_ASSETS)) + " actifs en batch)...")
+    prices = get_yahoo_batch_quotes(ETF_ASSETS, "etf")
+    print("  [ETFs] " + str(len(prices)) + " actifs recuperes")
     return prices
 
 # ============================================================
