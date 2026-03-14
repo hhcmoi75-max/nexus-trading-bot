@@ -851,17 +851,44 @@ def get_crypto_prices():
             key = id_to_ticker.get(coin["id"])
             if not key or key in STABLECOINS:
                 continue
-            prices[key] = {
-                "price_usd":  float(coin["current_price"]),
-                "change_24h": float(coin.get("price_change_percentage_24h") or 0),
-                "volume_usd": float(coin.get("total_volume") or 0),
-                "high_24h":   float(coin.get("high_24h") or coin["current_price"]),
-                "low_24h":    float(coin.get("low_24h")  or coin["current_price"]),
-                "closes":     [], "volumes": [],
-                "name":       CRYPTO_ASSETS[key]["name"],
-                "type":       "crypto", "source": "CoinGecko LIVE"
-            }
-        print("  [OK] " + str(len(prices)) + " cryptos")
+            cp = coin.get("current_price")
+            if cp is None:
+                continue
+            try:
+                prices[key] = {
+                    "price_usd":  float(cp),
+                    "change_24h": float(coin.get("price_change_percentage_24h") or 0),
+                    "volume_usd": float(coin.get("total_volume") or 0),
+                    "high_24h":   float(coin.get("high_24h") or cp),
+                    "low_24h":    float(coin.get("low_24h")  or cp),
+                    "closes":     [], "volumes": [],
+                    "name":       CRYPTO_ASSETS[key]["name"],
+                    "type":       "crypto", "source": "CoinGecko LIVE"
+                }
+                print("  [OK] " + key + " = " + str(round(float(cp),2)) + " USD")
+            except Exception as ex:
+                print("  [SKIP] " + key + ": " + str(ex))
+        print("  [OK] " + str(len(prices)) + " cryptos au total")
+        # Recuperer historique 60j pour les indicateurs techniques
+        time.sleep(1)
+        for key in list(prices.keys())[:10]:  # Top 10 seulement pour economiser les appels
+            try:
+                cg_id = COINGECKO_IDS.get(key, "")
+                if not cg_id:
+                    continue
+                r2 = requests.get(
+                    "https://api.coingecko.com/api/v3/coins/" + cg_id + "/market_chart"
+                    "?vs_currency=usd&days=60&interval=daily",
+                    headers={"Accept": "application/json"}, timeout=10
+                )
+                data = r2.json()
+                prices_hist = data.get("prices", [])
+                if prices_hist:
+                    prices[key]["closes"]  = [p[1] for p in prices_hist if p[1]]
+                    prices[key]["volumes"] = [v[1] for v in data.get("total_volumes", []) if v[1]]
+                time.sleep(0.5)
+            except:
+                pass
     except Exception as e:
         print("  [ERREUR CoinGecko] " + str(e))
     return prices
@@ -888,11 +915,47 @@ def get_yahoo_batch_quotes(tickers_map, asset_type):
     for chunk in chunks:
         try:
             symbols = ",".join(chunk)
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             r = requests.get(
-                "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + symbols,
+                "https://query2.finance.yahoo.com/v7/finance/quote?symbols=" + symbols,
                 headers=headers, timeout=15)
-            for q in r.json().get("quoteResponse",{}).get("result",[]):
+            data = r.json()
+            if not isinstance(data, dict):
+                print("  [BATCH] Reponse inattendue: " + str(type(data)))
+                continue
+            result_list = data.get("quoteResponse",{}).get("result",[])
+            if not result_list:
+                # Fallback v8
+                for sym in chunk:
+                    try:
+                        r2 = requests.get(
+                            "https://query1.finance.yahoo.com/v8/finance/chart/" + sym + "?interval=1d&range=5d",
+                            headers=headers, timeout=8)
+                        d2 = r2.json()
+                        meta = d2.get("chart",{}).get("result",[{}])[0].get("meta",{})
+                        price = float(meta.get("regularMarketPrice",0))
+                        if price > 0:
+                            key = ticker_to_key.get(sym)
+                            if key:
+                                prev = float(meta.get("chartPreviousClose", price))
+                                chg  = ((price-prev)/prev*100) if prev else 0
+                                prices[key] = {
+                                    "price_usd":  price, "change_24h": round(chg,2),
+                                    "volume_usd": float(meta.get("regularMarketVolume",0))*price,
+                                    "high_24h":   float(meta.get("regularMarketDayHigh",price)),
+                                    "low_24h":    float(meta.get("regularMarketDayLow",price)),
+                                    "closes":     [], "volumes":    [],
+                                    "name":       tickers_map[key]["name"],
+                                    "type":       asset_type, "source": "Yahoo Finance LIVE"
+                                }
+                        time.sleep(0.1)
+                    except:
+                        pass
+                time.sleep(0.3)
+                continue
+            for q in result_list:
+                if not isinstance(q, dict):
+                    continue
                 ticker = q.get("symbol","")
                 key    = ticker_to_key.get(ticker)
                 if not key:
@@ -1645,8 +1708,14 @@ def get_binance_prices_arb():
             "https://api.binance.com/api/v3/ticker/price?symbols=" + symbols_str,
             timeout=8
         )
+        data = r.json()
+        if not isinstance(data, list):
+            print("  [ARB] Binance reponse inattendue: " + str(type(data)))
+            return prices
         reverse_map = {v: k for k, v in TICKER_MAP["Binance"].items()}
-        for item in r.json():
+        for item in data:
+            if not isinstance(item, dict):
+                continue
             ticker = reverse_map.get(item.get("symbol", ""))
             if ticker:
                 try:
@@ -1812,6 +1881,14 @@ def run_bot():
 
     eur_rate = get_eur_rate()
     print("[FX] 1 USD = "+str(round(eur_rate,4))+" EUR\n")
+
+    # Test Telegram au demarrage
+    send_telegram(
+        "HAOUD TRADING IA - Demarrage\n"
+        "Version: v5.0 | " + datetime.now().strftime('%d/%m/%Y %H:%M') + " UTC\n"
+        "EUR/USD: " + str(round(eur_rate,4)) + "\n"
+        "Bot actif - analyse en cours..."
+    )
 
     # --- Chargement des systemes d'apprentissage ---
     learning_data = load_json(LEARNING_FILE, {
@@ -2023,10 +2100,10 @@ def run_bot():
         # Signal final
         if asset_type == "crypto" and btc_status == "crash":
             signal = "HOLD"
-        # Override Fear & Greed extreme
-        elif asset_type == "crypto" and fear_greed.get("action_override") == "BUY_STRONG" and score_final >= 55:
+        # Override Fear & Greed extreme (seulement si score technique aussi favorable)
+        elif asset_type == "crypto" and fear_greed.get("action_override") == "BUY_STRONG" and score_final >= 65 and tech["signal_tech"] in ["BUY","HOLD"]:
             signal = "BUY"
-            print("  [F&G] EXTREME PEUR override -> BUY force")
+            print("  [F&G] EXTREME PEUR override -> BUY force (score=" + str(score_final) + ")")
         elif asset_type == "crypto" and fear_greed.get("action_override") == "SELL_SIGNAL":
             signal = "HOLD"
             print("  [F&G] EUPHORIE override -> achat bloque")
