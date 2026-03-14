@@ -1214,6 +1214,360 @@ def place_order_bitpanda(asset, side, amount_eur):
     except Exception as e:
         print("  [BITPANDA] "+str(e)); return None
 
+
+# ============================================================
+# STRATEGIE 1 : ARBITRAGE DE SENTIMENT (NEWS TEMPS REEL)
+# ============================================================
+
+SENTIMENT_KEYWORDS = {
+    "tres_positif": ["beat", "record", "surge", "soar", "rally", "breakout", "approve", "approval",
+                     "partnership", "acquisition", "bullish", "upgrade", "buy rating", "ath",
+                     "depasse", "record", "hausse", "approbation", "partenariat"],
+    "tres_negatif": ["crash", "hack", "ban", "banned", "sued", "lawsuit", "fraud", "collapse",
+                     "bankruptcy", "fud", "dump", "sell off", "downgrade", "warning", "recall",
+                     "interdit", "fraude", "faillite", "effondrement", "piratage"],
+    "earnings_beat": ["beat estimates", "beat expectations", "earnings beat", "revenue beat",
+                      "above forecast", "depasse les attentes", "meilleur que prevu"],
+    "earnings_miss": ["miss estimates", "miss expectations", "earnings miss", "below forecast",
+                      "decoit", "inferieur aux attentes", "en dessous"],
+}
+
+def analyze_news_sentiment_rt(news_headlines, asset, asset_name):
+    """Analyse le sentiment des news en temps reel pour un actif specifique"""
+    if not news_headlines:
+        return 0, "neutre"
+    score = 0
+    mentions = []
+    asset_lower   = asset.lower()
+    name_lower    = asset_name.lower()
+
+    relevant = [h for h in news_headlines if asset_lower in h.lower() or name_lower in h.lower()]
+    if not relevant:
+        return 0, "neutre"
+
+    for headline in relevant:
+        h = headline.lower()
+        for kw in SENTIMENT_KEYWORDS["tres_positif"]:
+            if kw in h:
+                score += 8
+                mentions.append("+" + kw)
+        for kw in SENTIMENT_KEYWORDS["tres_negatif"]:
+            if kw in h:
+                score -= 10
+                mentions.append("-" + kw)
+        for kw in SENTIMENT_KEYWORDS["earnings_beat"]:
+            if kw in h:
+                score += 15
+                mentions.append("BEAT")
+        for kw in SENTIMENT_KEYWORDS["earnings_miss"]:
+            if kw in h:
+                score -= 12
+                mentions.append("MISS")
+
+    sentiment = "tres_positif" if score >= 15 else ("positif" if score >= 5 else
+                ("tres_negatif" if score <= -10 else ("negatif" if score <= -3 else "neutre")))
+
+    if mentions:
+        print("  [SENTIMENT RT] "+asset+" score="+str(score)+" "+str(mentions[:3]))
+    return score, sentiment
+
+# ============================================================
+# STRATEGIE 2 : COPIER LES FONDS (SEC EDGAR + ARK)
+# ============================================================
+
+# Fonds a suivre (tickers connus de leurs positions phares)
+SMART_MONEY_FUNDS = {
+    "ARK_INNOVATION": ["TSLA", "COIN", "ROKU", "SHOP", "MSTR"],
+    "BERKSHIRE":      ["AAPL", "BAC", "KO", "OXY", "MCO"],
+    "RENAISSANCE":    ["NVDA", "META", "MSFT", "GOOGL", "AMZN"],
+}
+
+def get_ark_holdings():
+    """Recupere les positions recentes d'ARK Invest (fichier CSV public)"""
+    holdings = {}
+    try:
+        r = requests.get(
+            "https://ark-funds.com/wp-content/uploads/funds-etf-csv/ARK_INNOVATION_ETF_ARKK_HOLDINGS.csv",
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+        )
+        lines = r.text.strip().split("\n")
+        for line in lines[1:11]:  # Top 10 positions
+            parts = line.split(",")
+            if len(parts) >= 3:
+                ticker = parts[2].strip().strip('"')
+                weight = parts[5].strip().strip('"') if len(parts) > 5 else "0"
+                if ticker:
+                    try:
+                        holdings[ticker] = float(weight.replace("%",""))
+                    except:
+                        holdings[ticker] = 1.0
+        print("  [ARK] "+str(len(holdings))+" positions recuperees")
+    except Exception as e:
+        print("  [ARK] Erreur: "+str(e))
+        # Fallback : positions connues
+        holdings = {t: 1.0 for t in SMART_MONEY_FUNDS["ARK_INNOVATION"]}
+    return holdings
+
+def get_sec_insider_activity(asset):
+    """Verifie les achats insiders recents via SEC EDGAR"""
+    try:
+        r = requests.get(
+            "https://efts.sec.gov/LATEST/search-index?q=%22"+asset+"%22+%22acquisition%22&forms=4&dateRange=custom&startdt="
+            + (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'),
+            headers={"User-Agent": "HAOUD-Bot contact@haoud.fr"}, timeout=8
+        )
+        hits = r.json().get("hits", {}).get("hits", [])
+        if len(hits) >= 2:
+            print("  [SEC INSIDER] "+asset+" : "+str(len(hits))+" achats insiders ce mois")
+            return len(hits)
+    except:
+        pass
+    return 0
+
+def get_smart_money_bonus(asset, ark_holdings):
+    """Retourne un bonus si l'actif est dans les portefeuilles des fonds intelligents"""
+    bonus = 0
+    # ARK holdings
+    if asset in ark_holdings:
+        weight = ark_holdings.get(asset, 0)
+        bonus += min(8, int(weight * 2))
+        print("  [SMART MONEY] "+asset+" dans ARK (poids="+str(weight)+"%) -> +"+str(min(8,int(weight*2)))+"pts")
+    # Berkshire / Renaissance connus
+    for fund, tickers in SMART_MONEY_FUNDS.items():
+        if asset in tickers and fund != "ARK_INNOVATION":
+            bonus += 4
+            print("  [SMART MONEY] "+asset+" dans "+fund+" -> +4pts")
+    return min(bonus, 12)  # Max +12pts
+
+# ============================================================
+# STRATEGIE 3 : EARNINGS TRADING
+# ============================================================
+
+# Calendrier earnings (approximatif - mois de publication)
+EARNINGS_CALENDAR = {
+    "NVDA":  {"months": [2, 5, 8, 11], "avg_move": 0.12, "beat_rate": 0.82},
+    "AAPL":  {"months": [1, 4, 7, 10], "avg_move": 0.05, "beat_rate": 0.75},
+    "MSFT":  {"months": [1, 4, 7, 10], "avg_move": 0.06, "beat_rate": 0.80},
+    "GOOGL": {"months": [1, 4, 7, 10], "avg_move": 0.07, "beat_rate": 0.72},
+    "META":  {"months": [1, 4, 7, 10], "avg_move": 0.09, "beat_rate": 0.78},
+    "AMZN":  {"months": [2, 4, 7, 10], "avg_move": 0.07, "beat_rate": 0.70},
+    "TSLA":  {"months": [1, 4, 7, 10], "avg_move": 0.10, "beat_rate": 0.60},
+    "COIN":  {"months": [2, 5, 8, 11], "avg_move": 0.15, "beat_rate": 0.65},
+}
+
+def get_earnings_bonus(asset, news_headlines):
+    """Detecte si on approche d'une date d'earnings et ajuste le score"""
+    if asset not in EARNINGS_CALENDAR:
+        return 0, False
+    cal       = EARNINGS_CALENDAR[asset]
+    now       = datetime.now()
+    cur_month = now.month
+    cur_day   = now.day
+
+    # Dans les 15 jours avant les earnings ?
+    in_earnings_window = False
+    for month in cal["months"]:
+        # Earnings typiquement en milieu/fin de mois
+        if cur_month == month and cur_day >= 15:
+            in_earnings_window = True
+        elif cur_month == month - 1 and cur_day >= 20:
+            in_earnings_window = True
+
+    if not in_earnings_window:
+        return 0, False
+
+    # Chercher dans les news si on a des indices
+    beat_rate  = cal["beat_rate"]
+    avg_move   = cal["avg_move"]
+    news_beat  = any("beat" in h.lower() or "depasse" in h.lower() for h in news_headlines if asset.lower() in h.lower() or "earnings" in h.lower())
+    news_miss  = any("miss" in h.lower() or "decoit" in h.lower() for h in news_headlines if asset.lower() in h.lower())
+
+    bonus = 0
+    if news_beat:
+        bonus = int(avg_move * 100)   # ex: NVDA +12% avg -> +12pts
+        print("  [EARNINGS] "+asset+" BEAT detecte dans news -> +"+str(bonus)+"pts")
+    elif news_miss:
+        bonus = -int(avg_move * 80)
+        print("  [EARNINGS] "+asset+" MISS detecte dans news -> "+str(bonus)+"pts")
+    elif in_earnings_window:
+        # Pré-earnings : léger bonus car beat_rate > 50%
+        bonus = int((beat_rate - 0.5) * 20)
+        print("  [EARNINGS] "+asset+" fenetre pre-earnings (beat_rate="+str(round(beat_rate*100))+"%) -> +"+str(bonus)+"pts")
+
+    return bonus, True
+
+# ============================================================
+# STRATEGIE 6 : FEAR & GREED INDEX
+# ============================================================
+
+def get_fear_greed_index():
+    """Recupere le Fear & Greed Index crypto (CNN/Alternative.me)"""
+    fg = {"value": 50, "label": "Neutral", "score_bonus": 0}
+    try:
+        r = requests.get("https://api.alternative.me/fng/?limit=1", timeout=8)
+        data  = r.json()["data"][0]
+        value = int(data["value"])
+        label = data["value_classification"]
+        fg["value"] = value
+        fg["label"] = label
+
+        # Strategie contrariante de Buffett
+        if value <= 20:
+            # Extreme Fear -> ACHETER massivement
+            fg["score_bonus"]      = 15
+            fg["action_override"]  = "BUY_STRONG"
+            print("  [F&G] EXTREME PEUR ("+str(value)+") -> bonus +15pts ACHAT")
+        elif value <= 35:
+            fg["score_bonus"] = 8
+            print("  [F&G] PEUR ("+str(value)+") -> bonus +8pts")
+        elif value >= 80:
+            # Extreme Greed -> VENDRE / eviter achats
+            fg["score_bonus"]     = -12
+            fg["action_override"] = "SELL_SIGNAL"
+            print("  [F&G] EUPHORIE ("+str(value)+") -> malus -12pts")
+        elif value >= 65:
+            fg["score_bonus"] = -5
+            print("  [F&G] CUPIDITE ("+str(value)+") -> malus -5pts")
+        else:
+            print("  [F&G] NEUTRE ("+str(value)+") -> 0pts")
+    except Exception as e:
+        print("  [F&G] Erreur: "+str(e))
+    return fg
+
+# ============================================================
+# STRATEGIE 7 : CORRELATION DXY/CRYPTO
+# ============================================================
+
+def get_dxy_signal():
+    """
+    Recupere le Dollar Index (DXY) via Yahoo Finance.
+    DXY baisse -> bon pour crypto/or.
+    DXY monte -> mauvais pour crypto/or.
+    """
+    dxy = {"change": 0, "crypto_bonus": 0, "signal": "neutre"}
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(
+            "https://query1.finance.yahoo.com/v7/finance/quote?symbols=DX-Y.NYB",
+            headers=headers, timeout=8
+        )
+        q      = r.json().get("quoteResponse", {}).get("result", [{}])[0]
+        change = float(q.get("regularMarketChangePercent", 0))
+        dxy["change"] = round(change, 2)
+
+        if change <= -0.5:
+            dxy["crypto_bonus"] = 8
+            dxy["signal"]       = "dollar_faible"
+            print("  [DXY] Dollar faible ("+str(change)+"%) -> crypto bonus +8pts")
+        elif change <= -0.2:
+            dxy["crypto_bonus"] = 4
+            dxy["signal"]       = "dollar_leger_baisse"
+            print("  [DXY] Dollar en baisse ("+str(change)+"%)")
+        elif change >= 0.5:
+            dxy["crypto_bonus"] = -8
+            dxy["signal"]       = "dollar_fort"
+            print("  [DXY] Dollar fort ("+str(change)+"%) -> crypto malus -8pts")
+        elif change >= 0.2:
+            dxy["crypto_bonus"] = -4
+            dxy["signal"]       = "dollar_leger_hausse"
+        else:
+            print("  [DXY] Dollar stable ("+str(change)+"%)")
+    except Exception as e:
+        print("  [DXY] Erreur: "+str(e))
+    return dxy
+
+# ============================================================
+# STRATEGIE 8 : PATTERNS CHARTISTES
+# ============================================================
+
+def detect_chart_patterns(closes):
+    """
+    Detecte les patterns chartistes classiques sur les 60 derniers jours.
+    Retourne un score de -20 a +20 et le pattern detecte.
+    """
+    if len(closes) < 30:
+        return 0, "insuffisant"
+
+    recent   = closes[-30:]
+    score    = 0
+    patterns = []
+
+    # --- Double Bottom (W) : 2 creux similaires -> signal ACHAT fort ---
+    if len(recent) >= 20:
+        lows = []
+        for i in range(2, len(recent)-2):
+            if recent[i] < recent[i-1] and recent[i] < recent[i+1]:
+                lows.append((i, recent[i]))
+        if len(lows) >= 2:
+            low1, low2 = lows[-2], lows[-1]
+            # Les 2 creux sont similaires (< 3% d'ecart) et espaces
+            if abs(low1[1] - low2[1]) / max(low1[1], low2[1]) < 0.03 and low2[0] - low1[0] >= 5:
+                score += 15
+                patterns.append("DOUBLE_BOTTOM")
+                print("  [PATTERN] Double Bottom detecte -> +15pts")
+
+    # --- Double Top (M) : 2 sommets similaires -> signal VENTE ---
+    if len(recent) >= 20:
+        highs = []
+        for i in range(2, len(recent)-2):
+            if recent[i] > recent[i-1] and recent[i] > recent[i+1]:
+                highs.append((i, recent[i]))
+        if len(highs) >= 2:
+            h1, h2 = highs[-2], highs[-1]
+            if abs(h1[1] - h2[1]) / max(h1[1], h2[1]) < 0.03 and h2[0] - h1[0] >= 5:
+                score -= 12
+                patterns.append("DOUBLE_TOP")
+                print("  [PATTERN] Double Top detecte -> -12pts")
+
+    # --- Triangle ascendant : hauts stables + bas qui montent -> ACHAT ---
+    if len(recent) >= 15:
+        last15 = recent[-15:]
+        highs15 = [last15[i] for i in range(2, len(last15)-2) if last15[i] > last15[i-1] and last15[i] > last15[i+1]]
+        lows15  = [last15[i] for i in range(2, len(last15)-2) if last15[i] < last15[i-1] and last15[i] < last15[i+1]]
+        if len(highs15) >= 2 and len(lows15) >= 2:
+            highs_flat  = abs(max(highs15) - min(highs15)) / max(highs15) < 0.02
+            lows_rising = lows15[-1] > lows15[0] * 1.01
+            if highs_flat and lows_rising:
+                score += 10
+                patterns.append("TRIANGLE_ASCENDANT")
+                print("  [PATTERN] Triangle ascendant -> +10pts")
+
+    # --- Epaule-Tete-Epaule (ETE) : signal VENTE ---
+    if len(recent) >= 25:
+        # Chercher 3 sommets dont le central est plus haut
+        window = recent[-25:]
+        peaks = [(i, window[i]) for i in range(2, len(window)-2)
+                 if window[i] > window[i-1] and window[i] > window[i+1] and window[i] > window[i-2] and window[i] > window[i+2]]
+        if len(peaks) >= 3:
+            p1, p2, p3 = peaks[-3], peaks[-2], peaks[-1]
+            # Tete plus haute que les epaules (>5%)
+            if p2[1] > p1[1] * 1.05 and p2[1] > p3[1] * 1.05:
+                # Epaules similaires (<5% d'ecart)
+                if abs(p1[1] - p3[1]) / max(p1[1], p3[1]) < 0.05:
+                    score -= 15
+                    patterns.append("ETE")
+                    print("  [PATTERN] Epaule-Tete-Epaule detecte -> -15pts")
+
+    # --- Breakout haussier : prix casse un niveau de resistance ---
+    if len(closes) >= 50:
+        resistance = max(closes[-50:-5])
+        last_price = closes[-1]
+        if last_price > resistance * 1.02:
+            score += 12
+            patterns.append("BREAKOUT")
+            print("  [PATTERN] Breakout haussier detecte -> +12pts")
+
+    # --- Oversold bounce : RSI < 25 + prix rebondit ---
+    rsi = compute_rsi(closes)
+    if rsi < 25 and len(recent) >= 3 and recent[-1] > recent[-2] > recent[-3]:
+        score += 10
+        patterns.append("OVERSOLD_BOUNCE")
+        print("  [PATTERN] Oversold bounce RSI="+str(rsi)+" -> +10pts")
+
+    pattern_str = "+".join(patterns) if patterns else "neutre"
+    return min(20, max(-20, score)), pattern_str
+
+
 # ============================================================
 # BOT PRINCIPAL v5.0
 # ============================================================
@@ -1269,6 +1623,18 @@ def run_bot():
     print("\n[RSS]...")
     news = fetch_rss_news()
     print("  [RSS] "+str(len(news))+" actualites")
+
+    # --- STRATEGIE 6 : Fear & Greed ---
+    print("\n[FEAR&GREED]...")
+    fear_greed = get_fear_greed_index()
+
+    # --- STRATEGIE 7 : DXY Dollar Index ---
+    print("\n[DXY]...")
+    dxy_signal = get_dxy_signal()
+
+    # --- STRATEGIE 2 : ARK / Smart Money ---
+    print("\n[ARK/SMART MONEY]...")
+    ark_holdings = get_ark_holdings()
 
     # --- Backtest ---
     print("\n[BACKTEST]...")
@@ -1379,9 +1745,53 @@ def run_bot():
         )
         ml_entry["score"] = score_final
 
-        # Signal
+        # === STRATEGIES AVANCEES : ajustements du score ===
+
+        # STRATEGIE 1 : Sentiment news temps reel
+        news_score, news_sent = analyze_news_sentiment_rt(news, asset, name)
+        if news_score != 0:
+            score_final = min(100, max(0, score_final + max(-15, min(15, news_score))))
+
+        # STRATEGIE 2 : Smart Money (ARK + Berkshire + insiders SEC)
+        sm_bonus = get_smart_money_bonus(asset, ark_holdings)
+        if sm_bonus:
+            score_final = min(100, score_final + sm_bonus)
+
+        # STRATEGIE 3 : Earnings trading
+        earnings_bonus, in_earnings = get_earnings_bonus(asset, news)
+        if earnings_bonus != 0:
+            score_final = min(100, max(0, score_final + earnings_bonus))
+
+        # STRATEGIE 6 : Fear & Greed (crypto seulement)
+        if asset_type == "crypto":
+            fg_bonus = fear_greed.get("score_bonus", 0)
+            if fg_bonus != 0:
+                score_final = min(100, max(0, score_final + fg_bonus))
+
+        # STRATEGIE 7 : Correlation DXY (crypto + or)
+        if asset_type == "crypto" or asset in ["GLD", "SLV"]:
+            dxy_bonus = dxy_signal.get("crypto_bonus", 0)
+            if dxy_bonus != 0:
+                score_final = min(100, max(0, score_final + dxy_bonus))
+
+        # STRATEGIE 8 : Patterns chartistes
+        closes = price_data.get("closes", [])
+        pattern_score, pattern_name = detect_chart_patterns(closes)
+        if pattern_score != 0:
+            score_final = min(100, max(0, score_final + pattern_score))
+            if pattern_name != "neutre":
+                print("  [CHART] "+pattern_name+" -> "+str(pattern_score)+"pts")
+
+        # Signal final
         if asset_type == "crypto" and btc_status == "crash":
             signal = "HOLD"
+        # Override Fear & Greed extreme
+        elif asset_type == "crypto" and fear_greed.get("action_override") == "BUY_STRONG" and score_final >= 55:
+            signal = "BUY"
+            print("  [F&G] EXTREME PEUR override -> BUY force")
+        elif asset_type == "crypto" and fear_greed.get("action_override") == "SELL_SIGNAL":
+            signal = "HOLD"
+            print("  [F&G] EUPHORIE override -> achat bloque")
         else:
             if score_final >= min_score and tech["signal_tech"] == "BUY":   signal = "BUY"
             elif score_final <= max_score and tech["signal_tech"] == "SELL": signal = "SELL"
@@ -1529,11 +1939,17 @@ def run_bot():
             "risque":       macro_cache.get("risque_principal",""),
             "opportunite":  macro_cache.get("opportunite_du_jour",""),
             "source":       price_data.get("source",""),
-            "bt_win_rate":  bt.get("win_rate"),
-            "bt_avg_pnl":   bt.get("avg_pnl_pct"),
-            "reddit_score": reddit.get("crypto" if asset in CRYPTO_ASSETS else "stock",50),
-            "onchain_score":onchain_data.get(asset,{}).get("score_onchain"),
-            "ml_confidence":ml_confidence,
+            "bt_win_rate":    bt.get("win_rate"),
+            "bt_avg_pnl":    bt.get("avg_pnl_pct"),
+            "reddit_score":  reddit.get("crypto" if asset in CRYPTO_ASSETS else "stock",50),
+            "onchain_score": onchain_data.get(asset,{}).get("score_onchain"),
+            "ml_confidence": ml_confidence,
+            "news_sentiment":news_sent,
+            "pattern":       pattern_name,
+            "fear_greed":    fear_greed.get("value", 50),
+            "dxy_change":    dxy_signal.get("change", 0),
+            "in_earnings":   in_earnings,
+            "smart_money":   sm_bonus > 0,
             "dry_run": DRY_RUN
         }
         history.append(entry)
@@ -1581,6 +1997,11 @@ def run_bot():
         "last_claude_run":     macro_cache.get("last_claude_run",""),
         "reddit_score":        reddit.get("crypto",50),
         "news_count":          len(news),
+        "fear_greed_value":    fear_greed.get("value", 50),
+        "fear_greed_label":    fear_greed.get("label","Neutral"),
+        "dxy_change":          dxy_signal.get("change", 0),
+        "dxy_signal":          dxy_signal.get("signal","neutre"),
+        "ark_top":             list(ark_holdings.keys())[:5],
     }
     bot_state["exposition"] = {
         "total_positions":   len(bot_state["positions"]),
