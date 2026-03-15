@@ -367,7 +367,13 @@ tr:hover td{background:var(--bg3)}
   <div class="sec-title">Positions ouvertes</div>
   <div class="card" id="posCard"><div class="empty">Aucune position ouverte</div></div>
 
-  <div class="sec-title" style="margin-top:20px">Résumé PnL</div>
+  <!-- BITPANDA REAL ACCOUNT -->
+  <div class="sec-title" style="margin-top:20px">Compte Bitpanda Fusion (Réel)</div>
+  <div class="card" id="bpAccountCard">
+    <div class="empty">Chargement des données Bitpanda...</div>
+  </div>
+
+  <div class="sec-title" style="margin-top:16px">Résumé PnL</div>
   <div class="grid-kpi" id="pnlGrid">
     <div class="card"><div class="kpi-label">PnL Total</div><div class="kpi-val" id="pnlTotal">—</div></div>
     <div class="card"><div class="kpi-label">Trades gagnants</div><div class="kpi-val green" id="pnlWins">—</div></div>
@@ -607,6 +613,77 @@ document.addEventListener('click', e => {
     document.getElementById('searchResults').style.display = 'none';
   }
 });
+
+// ─── BITPANDA ACCOUNT ────────────────────────────────────────────
+function renderBitpandaAccount() {
+  const el = document.getElementById('bpAccountCard');
+  if (!el) return;
+  const bp = state?.bitpanda;
+  if (!bp) {
+    el.innerHTML = '<div class="empty">Données Bitpanda non disponibles — clé API non configurée</div>';
+    return;
+  }
+
+  const connected  = bp.connected;
+  const balances   = bp.balances || {};
+  const positions  = bp.positions || [];
+  const totalEur   = bp.total_balance_eur || 0;
+  const lastUpdate = bp.last_update ? new Date(bp.last_update).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+
+  // Statut connexion
+  const statusHTML = connected
+    ? '<span class="lbar-badge active">● Connecté</span>'
+    : '<span class="lbar-badge inactive">○ Non connecté</span>';
+
+  // Soldes
+  let balancesHTML = '<div class="empty muted">Aucun solde disponible</div>';
+  if (Object.keys(balances).length > 0) {
+    balancesHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">' +
+      Object.entries(balances).map(([cur, b]) => `
+        <div class="dp-item" style="min-width:120px">
+          <div class="dp-label">${cur}</div>
+          <div class="dp-val sm">${b.total} ${cur}</div>
+          ${b.value_eur > 0 ? '<div style="font-size:10px;color:var(--muted)">≈ ' + fmt(b.value_eur) + '</div>' : ''}
+          ${b.locked > 0 ? '<div style="font-size:9px;color:var(--amber)">Bloqué: ' + b.locked + '</div>' : ''}
+        </div>`).join('') + '</div>';
+  }
+
+  // Positions réelles
+  let positionsHTML = '<div class="muted" style="font-size:11px;margin-top:8px">Aucune position ouverte sur Bitpanda</div>';
+  if (positions.length > 0) {
+    positionsHTML = '<div style="margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:11px">' +
+      '<thead><tr><th style="padding:6px;color:var(--muted);text-align:left">Actif</th><th>Côté</th><th>Montant</th><th>Prix entrée</th><th>Prix actuel</th><th>PnL</th></tr></thead>' +
+      '<tbody>' + positions.map(p => `
+        <tr>
+          <td style="padding:6px;font-weight:bold">${p.ticker}</td>
+          <td style="padding:6px"><span class="signal-badge ${p.side==='BUY'?'sig-buy':'sig-sell'}">${p.side}</span></td>
+          <td style="padding:6px">${p.amount}</td>
+          <td style="padding:6px">${fmt(p.entry_price)}</td>
+          <td style="padding:6px">${p.cur_price > 0 ? fmt(p.cur_price) : '—'}</td>
+          <td style="padding:6px" class="${p.pnl_pct>=0?'green':'red'}">${p.pnl_pct>=0?'+':''}${p.pnl_pct}%</td>
+        </tr>`).join('') +
+      '</tbody></table></div>';
+  }
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;font-weight:bold">Bitpanda Fusion</span>
+        ${statusHTML}
+        <span class="lbar-badge ${bp.dry_run?'pending':'active'}">${bp.dry_run?'⚠ Simulation':'✓ Mode Réel'}</span>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:16px;font-weight:bold;color:var(--blue)">${fmt(totalEur)}</div>
+        <div style="font-size:9px;color:var(--muted)">Valeur totale estimée</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Soldes disponibles</div>
+    ${balancesHTML}
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:12px;margin-bottom:6px">Positions ouvertes (Bitpanda)</div>
+    ${positionsHTML}
+    <div style="font-size:9px;color:var(--muted2);margin-top:10px">Dernière mise à jour : ${lastUpdate}</div>
+  `;
+}
 
 // ─── BARRES APPRENTISSAGE ─────────────────────────────────────────
 function renderLearningBars() {
@@ -1092,6 +1169,9 @@ function renderPositions() {
       }).join('')}</tbody>
     </table></div>`;
   }
+
+  // Bitpanda real account
+  renderBitpandaAccount();
 
   // PnL stats
   const trades = history.filter(h => h.action !== 'HOLD');
