@@ -1,17 +1,18 @@
 {
-  "score_macro": 45,
-  "score_sentiment": 35,
-  "tendance_marche": "BAISSIER",
-  "contexte": "Le marché crypto montre une faiblesse généralisée avec tous les actifs majeurs en territoire négatif, reflétant une aversion au risque dominante. La correction synchronisée suggère une pression vendeuse institutionnelle ou des prises de bénéfices coordonnées.",
-  "risque_principal": "Poursuite de la correction avec BTC testant le support des 60000 EUR, pouvant entraîner une cascade baissière sur les altcoins.",
-  "opportunite_du_jour": "Zone d'accumulation potentielle sur ETH proche des 1800 EUR si le support tient avec un RSI oversold.",
+  "score_macro": 65,
+  "score_sentiment": 58,
+  "tendance_marche": "HAUSSIER",
+  "contexte": "Le marché crypto montre une résilience remarquable avec Bitcoin surperformant après la volatilité initiale du conflit US-Iran, tandis que l'accumulation des baleines à 71K selon Santiment confirme un appétit institutionnel. Les performances généralisées positives sur tous les actifs majeurs (+0.55% à +1.49%) suggèrent un momentum haussier consolidé.",
+  "risque_principal": "L'incertitude géopolitique persistante du conflit au Moyen-Orient pourrait déclencher des sell-offs soudains malgré la résilience actuelle.",
+  "opportunite_du_jour": "L'accumulation active des baleines Bitcoin à ces niveaux présente une opportunité d'entrée avant une potentielle cassure haussière.",
   "actifs_favorables": [
     "BTC",
+    "XRP",
     "ETH"
   ],
   "actifs_risques": [
-    "ADA",
-    "AVAX"
+    "SOL",
+    "TRX"
   ],
-  "last_claude_run": "2026-03-14T05:09:23.636018+00:00"
+  "last_claude_run": "2026-03-15T06:21:10.304693+00:00"
 }
