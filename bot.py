@@ -2200,6 +2200,117 @@ def execute_arbitrage(opportunity, eur_rate):
         return False
 
 
+
+# ============================================================
+# LIAISON BITPANDA - LECTURE SEULE (simulation safe)
+# ============================================================
+
+def check_bitpanda_connection():
+    """Verifie la connexion API Bitpanda et retourne le statut"""
+    if not BITPANDA_KEY:
+        print("  [BITPANDA] Cle API non configuree")
+        return {"connected": False, "reason": "Cle API manquante"}
+    try:
+        r = requests.get(
+            "https://api.exchange.bitpanda.com/public/v1/account/balances",
+            headers={"Authorization": "Bearer " + BITPANDA_KEY},
+            timeout=10
+        )
+        if r.status_code == 200:
+            print("  [BITPANDA] Connexion OK")
+            return {"connected": True, "status_code": 200}
+        elif r.status_code == 401:
+            print("  [BITPANDA] Cle API invalide (401)")
+            return {"connected": False, "reason": "Cle API invalide"}
+        else:
+            print("  [BITPANDA] Erreur " + str(r.status_code))
+            return {"connected": False, "reason": "Erreur " + str(r.status_code)}
+    except Exception as e:
+        print("  [BITPANDA] Connexion echouee: " + str(e))
+        return {"connected": False, "reason": str(e)}
+
+def get_bitpanda_balances(eur_rate):
+    """Recupere les vrais soldes Bitpanda (lecture seule)"""
+    if not BITPANDA_KEY:
+        return {}
+    try:
+        r = requests.get(
+            "https://api.exchange.bitpanda.com/public/v1/account/balances",
+            headers={"Authorization": "Bearer " + BITPANDA_KEY},
+            timeout=10
+        )
+        if r.status_code != 200:
+            return {}
+        data     = r.json()
+        balances = {}
+        for item in data.get("balances", []):
+            currency  = item.get("currency_code", "")
+            available = float(item.get("available", 0))
+            locked    = float(item.get("locked", 0))
+            total     = available + locked
+            if total > 0.0001:
+                # Convertir en EUR si possible
+                if currency == "EUR":
+                    value_eur = total
+                elif currency == "BTC":
+                    value_eur = total * 40000 * eur_rate  # approximatif
+                else:
+                    value_eur = 0
+                balances[currency] = {
+                    "available": round(available, 8),
+                    "locked":    round(locked, 8),
+                    "total":     round(total, 8),
+                    "value_eur": round(value_eur, 2),
+                }
+        print("  [BITPANDA] " + str(len(balances)) + " soldes recuperes")
+        return balances
+    except Exception as e:
+        print("  [BITPANDA] Erreur soldes: " + str(e))
+        return {}
+
+def get_bitpanda_real_positions(eur_rate, all_prices):
+    """Recupere les vraies positions ouvertes sur Bitpanda Fusion"""
+    if not BITPANDA_KEY:
+        return []
+    try:
+        # Recuperer les ordres ouverts
+        r = requests.get(
+            "https://api.exchange.bitpanda.com/public/v1/account/orders?with_just_filled_inactive=false&with_cancelled_and_rejected=false",
+            headers={"Authorization": "Bearer " + BITPANDA_KEY},
+            timeout=10
+        )
+        if r.status_code != 200:
+            return []
+        orders = r.json().get("order_history", [])
+        positions = []
+        for order in orders:
+            if order.get("status") == "OPEN":
+                instrument = order.get("instrument_code", "")
+                side       = order.get("side", "")
+                amount     = float(order.get("amount", 0))
+                price      = float(order.get("price", 0))
+                # Extraire le ticker (ex: BTC_EUR -> BTC)
+                ticker = instrument.split("_")[0] if "_" in instrument else instrument
+                # Prix actuel
+                cur_data   = all_prices.get(ticker, {})
+                cur_price  = cur_data.get("price_usd", 0) * eur_rate if cur_data else 0
+                pnl_pct    = ((cur_price - price) / price * 100) if price > 0 and cur_price > 0 else 0
+                positions.append({
+                    "ticker":      ticker,
+                    "instrument":  instrument,
+                    "side":        side,
+                    "amount":      amount,
+                    "entry_price": price,
+                    "cur_price":   round(cur_price, 4),
+                    "pnl_pct":     round(pnl_pct, 2),
+                    "value_eur":   round(amount * price, 2),
+                })
+        print("  [BITPANDA] " + str(len(positions)) + " positions ouvertes")
+        return positions
+    except Exception as e:
+        print("  [BITPANDA] Erreur positions: " + str(e))
+        return []
+
 # ============================================================
 # BOT PRINCIPAL v5.0
 # ============================================================
@@ -2213,11 +2324,14 @@ def run_bot():
     eur_rate = get_eur_rate()
     print("[FX] 1 USD = "+str(round(eur_rate,4))+" EUR\n")
 
-    # Test Telegram au demarrage
+    # Test Telegram + connexion Bitpanda au demarrage
+    bp_connection = check_bitpanda_connection()
+    bp_status = "Bitpanda: OK" if bp_connection.get("connected") else "Bitpanda: " + bp_connection.get("reason","?")
     send_telegram(
         "HAOUD TRADING IA - Demarrage\n"
         "Version: v5.0 | " + datetime.now().strftime('%d/%m/%Y %H:%M') + " UTC\n"
         "EUR/USD: " + str(round(eur_rate,4)) + "\n"
+        + bp_status + "\n"
         "Bot actif - analyse en cours..."
     )
 
@@ -2355,6 +2469,11 @@ def run_bot():
     params  = updated_params
     weights = updated_weights
     save_json(PARAMS_FILE, params)
+
+    # --- BITPANDA : Soldes et positions reels (lecture seule) ---
+    print("\n[BITPANDA] Recuperation soldes et positions...")
+    bp_balances  = get_bitpanda_balances(eur_rate)
+    bp_positions = get_bitpanda_real_positions(eur_rate, all_prices)
 
     # --- ML BOOTSTRAP : Acceleration depuis l historique ---
     print("\n[ML BOOTSTRAP] Simulation trades historiques...")
@@ -2666,6 +2785,16 @@ def run_bot():
             bot_state["learning"]["ml_accuracy"] = mdata.get("accuracy")
     except: pass
 
+    bot_state["bitpanda"] = {
+        "connected":   bp_connection.get("connected", False),
+        "balances":    bp_balances,
+        "positions":   bp_positions,
+        "last_update": datetime.now().isoformat(),
+        "dry_run":     DRY_RUN,
+        "total_balance_eur": sum(
+            b.get("value_eur", 0) for b in bp_balances.values()
+        ),
+    }
     bot_state["arbitrage"] = {
         "last_scan":      datetime.now().isoformat(),
         "opportunities":  arb_opportunities[:10],
